@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-07-06
+
 - Add `git pr --version`.
 - Require SHA256 verification for `install.sh` and `git pr update` using
   release `SHA256SUMS` by default, with direct SHA overrides for mirrors/tests.
