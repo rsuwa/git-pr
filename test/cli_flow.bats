@@ -23,6 +23,18 @@ setup() {
   assert_log_contains "gh pr edit 123 --repo example/repo --add-label bug --add-reviewer alice --add-assignee bob"
 }
 
+@test "existing PR metadata-only update does not require local base" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_REMOTE_BASE_EXISTS=false
+
+  run "$BATS_TEST_DIRNAME/../git-pr" --no-edit --label bug
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "gh pr edit 123 --repo example/repo --add-label bug"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count"
+}
+
 @test "auto-merge subcommand assembles merge flags" {
   export GIT_PR_FAKE_PR_NUMBER=123
   export GIT_PR_FAKE_PR_HEAD_SHA=abc123
@@ -86,7 +98,7 @@ setup() {
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: Body file not found:"* ]]
-  assert_log_not_contains "git push"
+  assert_no_git_push
 }
 
 @test "existing PR create-only template option fails before push" {
@@ -97,7 +109,18 @@ setup() {
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: --editor/--template are only supported when creating a PR."* ]]
-  assert_log_not_contains "git push"
+  assert_no_git_push
+}
+
+@test "existing PR create-only template option is rejected before template lookup" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+
+  run "$BATS_TEST_DIRNAME/../git-pr" --template missing-template.md
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: --editor/--template are only supported when creating a PR."* ]]
+  [[ "$output" != *"Template file not found"* ]]
+  assert_no_git_push
 }
 
 @test "existing PR with non-empty body keeps body unless fill is explicit" {
@@ -159,5 +182,24 @@ setup() {
   run "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=update
 
   [ "$status" -eq 0 ]
+  assert_log_not_contains "gh pr edit 123 --body"
+}
+
+@test "copilot update without copilot does not fetch base" {
+  local tool_bin="$BATS_TEST_TMPDIR/no-copilot-bin"
+  mkdir -p "$tool_bin"
+  ln -sf "$(command -v bash)" "$tool_bin/bash"
+  ln -sf "$(command -v grep)" "$tool_bin/grep"
+  ln -sf "$(command -v cat)" "$tool_bin/cat"
+  ln -sf "$(command -v rm)" "$tool_bin/rm"
+  export PATH="$GIT_PR_FAKE_BIN:$BATS_TEST_DIRNAME/..:$tool_bin"
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_PR_BODY="Already written"
+
+  run "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=update
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Copilot CLI not found; falling back."* ]]
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
   assert_log_not_contains "gh pr edit 123 --body"
 }
