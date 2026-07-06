@@ -477,6 +477,103 @@ append_assignee_args() {
   done
 }
 
+has_pr_edit_metadata_updates() {
+  local include_base="${1:-$base_branch_explicit}"
+
+  [ "$include_base" = "true" ] || \
+    [ ${#edit_label_args[@]} -gt 0 ] || \
+    [ ${#edit_reviewer_args[@]} -gt 0 ] || \
+    [ ${#edit_assignee_args[@]} -gt 0 ]
+}
+
+has_pr_edit_updates() {
+  local include_title="$1"
+  local include_body="$2"
+  local include_base="$3"
+
+  [ "$include_title" = "true" ] || \
+    [ "$include_body" = "true" ] || \
+    [ "$include_base" = "true" ] || \
+    has_pr_edit_metadata_updates "$include_base"
+}
+
+append_pr_edit_metadata_args() {
+  local include_base="$1"
+
+  if [ "$include_base" = "true" ]; then
+    pr_edit_cmd+=(--base "$base_branch")
+  fi
+  if [ ${#edit_label_args[@]} -gt 0 ]; then
+    pr_edit_cmd+=("${edit_label_args[@]}")
+  fi
+  if [ ${#edit_reviewer_args[@]} -gt 0 ]; then
+    pr_edit_cmd+=("${edit_reviewer_args[@]}")
+  fi
+  if [ ${#edit_assignee_args[@]} -gt 0 ]; then
+    pr_edit_cmd+=("${edit_assignee_args[@]}")
+  fi
+}
+
+append_pr_edit_content_args() {
+  local include_title="$1"
+  local include_body="$2"
+
+  if [ "$include_title" = "true" ]; then
+    pr_edit_cmd+=(--title "$title")
+  fi
+  if [ "$include_body" = "true" ]; then
+    if [ -n "$body_file" ]; then
+      pr_edit_cmd+=(--body-file "$body_file")
+    else
+      pr_edit_cmd+=(--body "$body")
+    fi
+  fi
+}
+
+build_pr_edit_cmd() {
+  local include_base="$1"
+  local include_title="${2:-false}"
+  local include_body="${3:-false}"
+
+  pr_edit_cmd=(gh pr edit "$pr_number" --repo "$github_repo")
+  append_pr_edit_metadata_args "$include_base"
+  append_pr_edit_content_args "$include_title" "$include_body"
+}
+
+build_pr_create_cmd() {
+  pr_create_cmd=(gh pr create --repo "$github_repo" --base "$base_branch" --head "$current_branch")
+
+  if [ "$draft" = "true" ]; then
+    pr_create_cmd+=(--draft)
+  fi
+  if [ ${#label_args[@]} -gt 0 ]; then
+    pr_create_cmd+=("${label_args[@]}")
+  fi
+  if [ ${#reviewer_args[@]} -gt 0 ]; then
+    pr_create_cmd+=("${reviewer_args[@]}")
+  fi
+  if [ ${#assignee_args[@]} -gt 0 ]; then
+    pr_create_cmd+=("${assignee_args[@]}")
+  fi
+  if [ "$editor" = "true" ]; then
+    pr_create_cmd+=(--editor)
+  fi
+}
+
+append_pr_create_fill_args() {
+  case "$fill_mode" in
+    first)
+      pr_create_cmd+=(--fill-first)
+      ;;
+    verbose)
+      pr_create_cmd+=(--fill-verbose)
+      ;;
+    normal|*)
+      pr_create_cmd+=(--fill)
+      ;;
+  esac
+}
+
 generate_body_from_commits() {
   local first_commit
   case "$fill_mode" in
@@ -1500,21 +1597,8 @@ if [ -n "$pr_number" ]; then
 
   if [ "$skip_edit" = "true" ]; then
     log_info "Skipping PR title/body update (--no-edit)."
-    if [ "$base_branch_explicit" = "true" ] || \
-       [ ${#edit_label_args[@]} -gt 0 ] || [ ${#edit_reviewer_args[@]} -gt 0 ] || [ ${#edit_assignee_args[@]} -gt 0 ]; then
-      pr_edit_cmd=(gh pr edit "$pr_number" --repo "$github_repo")
-      if [ "$base_branch_explicit" = "true" ]; then
-        pr_edit_cmd+=(--base "$base_branch")
-      fi
-      if [ ${#edit_label_args[@]} -gt 0 ]; then
-        pr_edit_cmd+=("${edit_label_args[@]}")
-      fi
-      if [ ${#edit_reviewer_args[@]} -gt 0 ]; then
-        pr_edit_cmd+=("${edit_reviewer_args[@]}")
-      fi
-      if [ ${#edit_assignee_args[@]} -gt 0 ]; then
-        pr_edit_cmd+=("${edit_assignee_args[@]}")
-      fi
+    if has_pr_edit_metadata_updates; then
+      build_pr_edit_cmd "$base_branch_explicit"
       "${pr_edit_cmd[@]}"
     fi
   else
@@ -1563,31 +1647,8 @@ if [ -n "$pr_number" ]; then
       fi
     fi
 
-    if [ "$update_title" = "true" ] || [ "$update_body" = "true" ] || [ "$update_base" = "true" ] || \
-       [ ${#edit_label_args[@]} -gt 0 ] || [ ${#edit_reviewer_args[@]} -gt 0 ] || [ ${#edit_assignee_args[@]} -gt 0 ]; then
-      pr_edit_cmd=(gh pr edit "$pr_number" --repo "$github_repo")
-      if [ "$update_base" = "true" ]; then
-        pr_edit_cmd+=(--base "$base_branch")
-      fi
-      if [ ${#edit_label_args[@]} -gt 0 ]; then
-        pr_edit_cmd+=("${edit_label_args[@]}")
-      fi
-      if [ ${#edit_reviewer_args[@]} -gt 0 ]; then
-        pr_edit_cmd+=("${edit_reviewer_args[@]}")
-      fi
-      if [ ${#edit_assignee_args[@]} -gt 0 ]; then
-        pr_edit_cmd+=("${edit_assignee_args[@]}")
-      fi
-      if [ "$update_title" = "true" ]; then
-        pr_edit_cmd+=(--title "$title")
-      fi
-      if [ "$update_body" = "true" ]; then
-        if [ -n "$body_file" ]; then
-          pr_edit_cmd+=(--body-file "$body_file")
-        else
-          pr_edit_cmd+=(--body "$body")
-        fi
-      fi
+    if has_pr_edit_updates "$update_title" "$update_body" "$update_base"; then
+      build_pr_edit_cmd "$update_base" "$update_title" "$update_body"
       "${pr_edit_cmd[@]}"
     else
       log_info "No PR fields to update."
@@ -1605,25 +1666,7 @@ if [ -n "$pr_number" ]; then
   exit 0
 fi
 
-pr_create_cmd=(gh pr create --repo "$github_repo" --base "$base_branch" --head "$current_branch")
-
-if [ "$draft" = "true" ]; then
-  pr_create_cmd+=(--draft)
-fi
-
-if [ ${#label_args[@]} -gt 0 ]; then
-  pr_create_cmd+=("${label_args[@]}")
-fi
-if [ ${#reviewer_args[@]} -gt 0 ]; then
-  pr_create_cmd+=("${reviewer_args[@]}")
-fi
-if [ ${#assignee_args[@]} -gt 0 ]; then
-  pr_create_cmd+=("${assignee_args[@]}")
-fi
-
-if [ "$editor" = "true" ]; then
-  pr_create_cmd+=(--editor)
-fi
+build_pr_create_cmd
 
 if [ "$use_copilot" = "true" ]; then
   if [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ]; then
@@ -1643,17 +1686,7 @@ elif [ -n "$template_file" ]; then
   fi
   pr_create_cmd+=(--title "$title" --template "$template_file")
 elif [ "$fill" = "true" ] && [ -z "$title" ] && [ -z "$body" ] && [ -z "$body_file" ] && [ -z "$template_file" ]; then
-  case "$fill_mode" in
-    first)
-      pr_create_cmd+=(--fill-first)
-      ;;
-    verbose)
-      pr_create_cmd+=(--fill-verbose)
-      ;;
-    normal|*)
-      pr_create_cmd+=(--fill)
-      ;;
-  esac
+  append_pr_create_fill_args
 else
   if [ -z "$title" ]; then
     title=$(git -C "$repo_root" log -1 --pretty=%s)
