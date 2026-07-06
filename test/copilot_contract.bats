@@ -69,6 +69,18 @@ set -euo pipefail
 if [ "${GIT_PR_FAKE_CHMOD_FAIL_PRIVATE:-false}" = "true" ] && [ "${1-}" = "700" ]; then
   exit 1
 fi
+if [ "${1-}" = "700" ]; then
+  count_file="$GIT_PR_FAKE_LOG.chmod-private-count"
+  count=0
+  if [ -f "$count_file" ]; then
+    count=$(cat "$count_file")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$count_file"
+  if [ -n "${GIT_PR_FAKE_CHMOD_FAIL_PRIVATE_AFTER:-}" ] && [ "$count" -gt "$GIT_PR_FAKE_CHMOD_FAIL_PRIVATE_AFTER" ]; then
+    exit 1
+  fi
+fi
 if [ -n "${GIT_PR_FAKE_CHMOD_FAIL_PATH:-}" ] && [ "${2-}" = "$GIT_PR_FAKE_CHMOD_FAIL_PATH" ]; then
   exit 1
 fi
@@ -313,6 +325,21 @@ FAKE_CHMOD
   assert_no_command_logged "copilot"
   assert_log_not_contains "gh pr create"
   [ -z "$(find "$tmp_root" -mindepth 1 -maxdepth 1 -name 'git-pr.*' -print -quit)" ]
+}
+
+@test "copilot reuses preflighted private temp directory after push" {
+  create_fake_copilot
+  create_selective_chmod
+
+  run env \
+    GIT_PR_FAKE_CHMOD_FAIL_PRIVATE_AFTER=1 \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GIT_PR_FAKE_LOG.chmod-private-count")" = "1" ]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
+  assert_log_contains "copilot -s --no-custom-instructions --stream off -p"
+  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Generated\\ title --body Generated\\ body"
 }
 
 @test "copilot debug log is skipped when log directory cannot be secured" {

@@ -8,6 +8,7 @@ COPILOT_UPDATE_START_MARKER="<!-- git-pr:copilot-update:start -->"
 COPILOT_UPDATE_END_MARKER="<!-- git-pr:copilot-update:end -->"
 cleanup_paths=()
 cleanup_trap_registered="false"
+copilot_private_temp_dir=""
 
 usage() {
   cat <<'USAGE'
@@ -361,11 +362,14 @@ validate_copilot_diff_max_bytes() {
 ensure_copilot_private_temp_available() {
   local temp_dir
 
+  if [ -n "$copilot_private_temp_dir" ]; then
+    return 0
+  fi
+
   temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-pr.XXXXXX") || die "Failed to create temporary directory."
   register_cleanup_path "$temp_dir"
   chmod 700 "$temp_dir" 2>/dev/null || die "Failed to secure temporary directory: $temp_dir"
-  rm -rf "$temp_dir"
-  unregister_cleanup_path "$temp_dir"
+  copilot_private_temp_dir="$temp_dir"
 }
 
 generate_title_body_with_copilot() {
@@ -384,9 +388,14 @@ generate_title_body_with_copilot() {
   fi
 
   local temp_dir
-  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-pr.XXXXXX") || die "Failed to create temporary directory."
-  register_cleanup_path "$temp_dir"
-  chmod 700 "$temp_dir" 2>/dev/null || die "Failed to secure temporary directory: $temp_dir"
+  if [ -n "$copilot_private_temp_dir" ]; then
+    temp_dir="$copilot_private_temp_dir"
+  else
+    temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-pr.XXXXXX") || die "Failed to create temporary directory."
+    register_cleanup_path "$temp_dir"
+    chmod 700 "$temp_dir" 2>/dev/null || die "Failed to secure temporary directory: $temp_dir"
+    copilot_private_temp_dir="$temp_dir"
+  fi
 
   local diff_file
   diff_file="$temp_dir/diff.txt"
