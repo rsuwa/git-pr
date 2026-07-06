@@ -14,6 +14,7 @@
   private.
 - Run CI on Linux and macOS, shellcheck Bats files, and smoke-test release-style
   install/update assets before publishing releases.
+- Fix Bash 3.2 empty-array handling for macOS compatibility.
 
 ## 0.2.0 - 2026-07-06
 

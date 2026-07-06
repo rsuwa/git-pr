@@ -98,6 +98,7 @@ require_nonempty_option_value() {
 cleanup_registered_paths() {
   local path
 
+  [ "${#cleanup_paths[@]}" -gt 0 ] || return 0
   for path in "${cleanup_paths[@]}"; do
     if [ -n "$path" ]; then
       rm -rf "$path"
@@ -120,12 +121,16 @@ unregister_cleanup_path() {
   local path
   local -a retained_paths=()
 
+  [ "${#cleanup_paths[@]}" -gt 0 ] || return 0
   for path in "${cleanup_paths[@]}"; do
     if [ "$path" != "$target" ]; then
       retained_paths+=("$path")
     fi
   done
-  cleanup_paths=("${retained_paths[@]}")
+  cleanup_paths=()
+  if [ "${#retained_paths[@]}" -gt 0 ]; then
+    cleanup_paths=("${retained_paths[@]}")
+  fi
 }
 
 log_copilot_debug() {
@@ -378,9 +383,11 @@ generate_title_body_with_copilot() {
 
   local -a diff_pathspec
   diff_pathspec=(".")
-  for exclude_path in "${diff_excludes[@]}"; do
-    diff_pathspec+=(":(exclude)$exclude_path")
-  done
+  if [ "${#diff_excludes[@]}" -gt 0 ]; then
+    for exclude_path in "${diff_excludes[@]}"; do
+      diff_pathspec+=(":(exclude)$exclude_path")
+    done
+  fi
 
   if git -C "$repo_root" diff --quiet "$base_ref...HEAD" -- "${diff_pathspec[@]}"; then
     log_warn "No diff to summarize; falling back."
@@ -596,6 +603,7 @@ append_diff_excludes_csv() {
   local value="$1"
   local -a parts
   IFS=',' read -r -a parts <<< "$value"
+  [ "${#parts[@]}" -gt 0 ] || return 0
   for part in "${parts[@]}"; do
     append_diff_exclude "$part"
   done
@@ -624,9 +632,11 @@ load_git_pr_config() {
   fi
 
   local explicit_exclude
-  for explicit_exclude in "${diff_exclude_args[@]}"; do
-    append_diff_exclude "$explicit_exclude"
-  done
+  if [ "${#diff_exclude_args[@]}" -gt 0 ]; then
+    for explicit_exclude in "${diff_exclude_args[@]}"; do
+      append_diff_exclude "$explicit_exclude"
+    done
+  fi
 }
 
 append_label_args() {
@@ -634,6 +644,7 @@ append_label_args() {
   local -a parts
 
   IFS=',' read -r -a parts <<< "$value"
+  [ "${#parts[@]}" -gt 0 ] || return 0
   for part in "${parts[@]}"; do
     part=$(trim_spaces "$part")
     if [ -n "$part" ]; then
@@ -648,6 +659,7 @@ append_reviewer_args() {
   local -a parts
 
   IFS=',' read -r -a parts <<< "$value"
+  [ "${#parts[@]}" -gt 0 ] || return 0
   for part in "${parts[@]}"; do
     part=$(trim_spaces "$part")
     if [ -n "$part" ]; then
@@ -662,6 +674,7 @@ append_assignee_args() {
   local -a parts
 
   IFS=',' read -r -a parts <<< "$value"
+  [ "${#parts[@]}" -gt 0 ] || return 0
   for part in "${parts[@]}"; do
     part=$(trim_spaces "$part")
     if [ -n "$part" ]; then
@@ -768,7 +781,9 @@ pr_edit_update_summary() {
     parts+=("assignees")
   fi
 
-  join_summary_parts "${parts[@]}"
+  if [ "${#parts[@]}" -gt 0 ]; then
+    join_summary_parts "${parts[@]}"
+  fi
 }
 
 log_pr_edit_summary() {
@@ -928,9 +943,11 @@ validate_common_options() {
   if [ "$language_explicit" = "true" ]; then
     require_nonempty_option_value "--language" "$language"
   fi
-  for diff_exclude_arg in "${diff_exclude_args[@]}"; do
-    require_nonempty_option_value "--diff-exclude" "$diff_exclude_arg"
-  done
+  if [ "${#diff_exclude_args[@]}" -gt 0 ]; then
+    for diff_exclude_arg in "${diff_exclude_args[@]}"; do
+      require_nonempty_option_value "--diff-exclude" "$diff_exclude_arg"
+    done
+  fi
   if [ "$merge_method_explicit" = "true" ]; then
     require_nonempty_option_value "--merge-method" "$merge_method"
   fi
