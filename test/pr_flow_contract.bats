@@ -274,6 +274,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--title Updated\\ title" "--body Updated\\ body"
+  [[ "$output" == *"INFO: Updated PR #123: title, body."* ]]
   assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr edit 123"
 }
 
@@ -285,6 +286,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--title Updated\\ title" "--body Updated\\ body"
+  [[ "$output" == *"INFO: Updated PR #123: title, body."* ]]
   assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
   assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count"
   assert_log_not_contains "Base branch 'main' not found"
@@ -310,6 +312,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body-file $body_file"
+  [[ "$output" == *"INFO: Updated PR #123: body file."* ]]
 }
 
 @test "existing PR explicit fill replaces a non-empty body" {
@@ -319,6 +322,8 @@ setup() {
   run "$GIT_PR" --fill
 
   [ "$status" -eq 0 ]
+  [[ "$output" == *"INFO: Replacing existing PR body because a fill option was specified."* ]]
+  [[ "$output" == *"INFO: Updated PR #123: body."* ]]
   assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body -\\ Test\\ commit"
 }
 
@@ -333,6 +338,8 @@ setup() {
   assert_log_contains "gh pr view 123 --repo example/repo --json baseRefName --jq .baseRefName\\ //\\ \\\"\\\""
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin release"
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT log --pretty=-\\ %s origin/release..HEAD"
+  [[ "$output" == *"INFO: Replacing existing PR body because a fill option was specified."* ]]
+  [[ "$output" == *"INFO: Updated PR #123: body."* ]]
   assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body -\\ Test\\ commit"
 }
 

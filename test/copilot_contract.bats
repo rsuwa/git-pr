@@ -79,6 +79,7 @@ hide_host_copilot() {
 
   [ "$status" -eq 0 ]
   assert_log_contains "gh pr edit 123 --repo example/repo --body"
+  [[ "$output" == *"INFO: Updated PR #123: copilot section."* ]]
   printf '%s' $'Already written\n\n<!-- git-pr:copilot-update:start -->\nGenerated body\n<!-- git-pr:copilot-update:end -->' \
     > "$BATS_TEST_TMPDIR/expected-body.md"
   diff -u "$BATS_TEST_TMPDIR/expected-body.md" "$GIT_PR_FAKE_LOG.pr-edit-body"

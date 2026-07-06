@@ -21,6 +21,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_contains "gh pr edit 123 --repo example/repo --add-label bug --add-reviewer alice --add-assignee bob"
+  [[ "$output" == *"INFO: Updated PR #123: labels, reviewers, assignees."* ]]
 }
 
 @test "existing PR metadata-only update does not require local base" {
@@ -31,6 +32,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_contains "gh pr edit 123 --repo example/repo --add-label bug"
+  [[ "$output" == *"INFO: Updated PR #123: labels."* ]]
   assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
   assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count"
 }
@@ -151,6 +153,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_contains "gh pr edit 123 --repo example/repo --base develop"
+  [[ "$output" == *"INFO: Updated PR #123: base."* ]]
 }
 
 @test "web option creates through CLI then opens the created PR" {
