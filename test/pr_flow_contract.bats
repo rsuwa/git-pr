@@ -131,6 +131,27 @@ setup() {
   assert_log_not_contains "gh pr create"
 }
 
+@test "create fails before push when base fetch fails" {
+  export GIT_PR_FAKE_FETCH_FAIL=true
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to fetch origin/main."* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
+@test "create fetches selected base before counting commits" {
+  run "$GIT_PR" --base develop
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin develop"
+  assert_log_order \
+    "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin develop" \
+    "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count origin/develop..HEAD"
+}
+
 @test "create with --fill-first passes through fill-first mode" {
   run "$GIT_PR" --fill-first
 
@@ -256,6 +277,30 @@ setup() {
   assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr edit 123"
 }
 
+@test "existing PR explicit title and body do not require local base" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_REMOTE_BASE_EXISTS=false
+
+  run "$GIT_PR" --title "Updated title" --body "Updated body"
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--title Updated\\ title" "--body Updated\\ body"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count"
+  assert_log_not_contains "Base branch 'main' not found"
+}
+
+@test "existing PR explicit base cannot target current branch" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+
+  run "$GIT_PR" --no-edit --base feature
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: You are on 'feature'. Create a feature branch first."* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr edit"
+}
+
 @test "existing PR updates body file only" {
   local body_file="$BATS_TEST_TMPDIR/update-body.md"
   export GIT_PR_FAKE_PR_NUMBER=123
@@ -275,6 +320,32 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body -\\ Test\\ commit"
+}
+
+@test "existing PR explicit fill uses the pull request base branch" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_PR_BODY="Already written"
+  export GIT_PR_FAKE_PR_BASE=release
+
+  run "$GIT_PR" --fill
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "gh pr view 123 --repo example/repo --json baseRefName --jq .baseRefName\\ //\\ \\\"\\\""
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin release"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT log --pretty=-\\ %s origin/release..HEAD"
+  assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body -\\ Test\\ commit"
+}
+
+@test "existing PR explicit fill fails before edit when base fetch fails" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_PR_BODY="Already written"
+  export GIT_PR_FAKE_FETCH_FAIL=true
+
+  run "$GIT_PR" --fill
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to fetch origin/main."* ]]
+  assert_log_not_contains "gh pr edit"
 }
 
 @test "existing PR explicit no-fill leaves title and body unchanged" {

@@ -253,11 +253,6 @@ set_title_body_from_copilot_fallback_response() {
 }
 
 generate_title_body_with_copilot() {
-  if ! command -v copilot >/dev/null 2>&1; then
-    log_warn "Copilot CLI not found; falling back."
-    return 1
-  fi
-
   local max_bytes="${GIT_PR_COPILOT_DIFF_MAX_BYTES:-20000}"
   if ! [[ "$max_bytes" =~ ^[0-9]+$ ]]; then
     die "GIT_PR_COPILOT_DIFF_MAX_BYTES must be an integer."
@@ -420,6 +415,20 @@ EOF
   if [ -n "$copilot_log_always" ]; then
     log_copilot_debug "copilot-success" "$copilot_log_dir" "$copilot_log_tag" "$prompt_file" "$diff_file" "$response" "$copilot_log_content"
   fi
+  return 0
+}
+
+can_run_copilot_generation() {
+  if ! command -v copilot >/dev/null 2>&1; then
+    log_warn "Copilot CLI not found; falling back."
+    return 1
+  fi
+
+  local max_bytes="${GIT_PR_COPILOT_DIFF_MAX_BYTES:-20000}"
+  if ! [[ "$max_bytes" =~ ^[0-9]+$ ]]; then
+    die "GIT_PR_COPILOT_DIFF_MAX_BYTES must be an integer."
+  fi
+
   return 0
 }
 
@@ -1155,6 +1164,62 @@ get_pr_field() {
   printf '%s' "$output"
 }
 
+resolve_default_base_branch() {
+  local default_ref
+
+  base_branch=$(git -C "$repo_root" config --get "branch.$current_branch.gh-merge-base" || true)
+  if [ -z "$base_branch" ]; then
+    base_branch=$(gh repo view --repo "$github_repo" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
+  fi
+  if [ -z "$base_branch" ]; then
+    default_ref=$(git -C "$repo_root" symbolic-ref -q --short refs/remotes/origin/HEAD || true)
+    if [ -n "$default_ref" ]; then
+      base_branch="${default_ref#origin/}"
+    fi
+  fi
+  if [ -z "$base_branch" ]; then
+    die "Base branch not specified and default branch could not be determined. Use --base or set branch.$current_branch.gh-merge-base."
+  fi
+}
+
+resolve_create_base_branch() {
+  if [ "$base_branch_explicit" = "false" ]; then
+    resolve_default_base_branch
+  fi
+
+  if [ "$current_branch" = "$base_branch" ]; then
+    die "You are on '$base_branch'. Create a feature branch first."
+  fi
+}
+
+resolve_existing_generation_base_branch() {
+  if [ "$base_branch_explicit" = "true" ]; then
+    return 0
+  fi
+
+  base_branch=$(get_pr_field "$pr_number" baseRefName)
+  if [ -z "$base_branch" ]; then
+    resolve_default_base_branch
+  fi
+}
+
+ensure_base_ref_for_generation() {
+  git -C "$repo_root" fetch origin "$base_branch" >/dev/null 2>&1 || \
+    die "Failed to fetch origin/$base_branch."
+
+  if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/$base_branch"; then
+    base_ref="origin/$base_branch"
+  elif git -C "$repo_root" show-ref --verify --quiet "refs/heads/$base_branch"; then
+    base_ref="$base_branch"
+  else
+    die "Base branch '$base_branch' not found."
+  fi
+}
+
+count_commits_since_base() {
+  commit_count=$(git -C "$repo_root" rev-list --count "$base_ref..HEAD") || die "Failed to count commits between $base_ref and HEAD."
+}
+
 is_valid_github_repo_path() {
   case "$1" in
     ""|/*|*/*/*)
@@ -1700,28 +1765,6 @@ if ! gh auth status --hostname "$github_host" >/dev/null 2>&1; then
   die "GitHub CLI is not authenticated for $github_host. Run: gh auth login --hostname $github_host"
 fi
 
-if [ "$action" != "auto-merge" ]; then
-  if [ "$base_branch_explicit" = "false" ]; then
-    base_branch=$(git -C "$repo_root" config --get "branch.$current_branch.gh-merge-base" || true)
-    if [ -z "$base_branch" ]; then
-      base_branch=$(gh repo view --repo "$github_repo" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
-    fi
-    if [ -z "$base_branch" ]; then
-      default_ref=$(git -C "$repo_root" symbolic-ref -q --short refs/remotes/origin/HEAD || true)
-      if [ -n "$default_ref" ]; then
-        base_branch="${default_ref#origin/}"
-      fi
-    fi
-    if [ -z "$base_branch" ]; then
-      die "Base branch not specified and default branch could not be determined. Use --base or set branch.$current_branch.gh-merge-base."
-    fi
-  fi
-
-  if [ "$current_branch" = "$base_branch" ]; then
-    die "You are on '$base_branch'. Create a feature branch first."
-  fi
-fi
-
 if [ "$action" = "auto-merge" ]; then
   pr_number=$(get_current_pr_number)
   [ -n "$pr_number" ] || die "No open PR found for current branch."
@@ -1736,35 +1779,9 @@ if [ "$action" = "auto-merge" ]; then
   exit 0
 fi
 
-if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/$base_branch"; then
-  base_ref="origin/$base_branch"
-elif git -C "$repo_root" show-ref --verify --quiet "refs/heads/$base_branch"; then
-  base_ref="$base_branch"
-else
-  die "Base branch '$base_branch' not found."
-fi
-
-commit_count=$(git -C "$repo_root" rev-list --count "$base_ref..HEAD") || die "Failed to count commits between $base_ref and HEAD."
 pr_number=$(get_current_pr_number)
-
-if [ -n "$body_file" ] && [ "$body_file" != "-" ] && [ ! -f "$body_file" ]; then
-  die "Body file not found: $body_file"
-fi
-
-resolve_template_file
-
-if [ -n "$template_file" ] && [ "$template_resolved" != "true" ]; then
-  die "Template file not found: $template_file"
-fi
-
-if [ -n "$pr_number" ]; then
-  if [ "$editor" = "true" ] || [ -n "$template_file" ]; then
-    die "--editor/--template are only supported when creating a PR."
-  fi
-  if [ "$draft_explicit" = "true" ]; then
-    die "--draft is only supported when creating a PR."
-  fi
-fi
+base_ref=""
+commit_count=0
 
 if [ "$use_copilot" = "true" ]; then
   copilot_mode_effective="$copilot_mode"
@@ -1783,6 +1800,32 @@ if [ "$use_copilot" = "true" ]; then
   else
     copilot_update_effective="false"
   fi
+fi
+
+if [ -n "$body_file" ] && [ "$body_file" != "-" ] && [ ! -f "$body_file" ]; then
+  die "Body file not found: $body_file"
+fi
+
+if [ -n "$pr_number" ]; then
+  if [ "$editor" = "true" ] || [ -n "$template_file" ]; then
+    die "--editor/--template are only supported when creating a PR."
+  fi
+  if [ "$draft_explicit" = "true" ]; then
+    die "--draft is only supported when creating a PR."
+  fi
+  if [ "$base_branch_explicit" = "true" ] && [ "$base_branch" = "$current_branch" ]; then
+    die "You are on '$base_branch'. Create a feature branch first."
+  fi
+else
+  resolve_create_base_branch
+  resolve_template_file
+
+  if [ -n "$template_file" ] && [ "$template_resolved" != "true" ]; then
+    die "Template file not found: $template_file"
+  fi
+
+  ensure_base_ref_for_generation
+  count_commits_since_base
 fi
 
 if [ -z "$pr_number" ] && [ "$commit_count" -eq 0 ]; then
@@ -1859,7 +1902,15 @@ if [ -n "$pr_number" ]; then
         update_title="true"
         update_body="true"
       fi
-      if ! generate_title_body_with_copilot; then
+      if can_run_copilot_generation; then
+        resolve_existing_generation_base_branch
+        ensure_base_ref_for_generation
+        if ! generate_title_body_with_copilot; then
+          copilot_fallback
+          update_title="false"
+          update_body="false"
+        fi
+      else
         copilot_fallback
         update_title="false"
         update_body="false"
@@ -1876,10 +1927,19 @@ if [ -n "$pr_number" ]; then
       elif [ "$body_explicit" = "true" ]; then
         update_body="true"
       elif [ "$fill" = "true" ]; then
-        if [ "$commit_count" -eq 0 ]; then
-          log_info "No new commits compared to $base_branch. Skipping auto-update."
-        elif [ "$fill_explicit" != "true" ] && [ -n "$(get_pr_field "$pr_number" body)" ]; then
+        existing_body=$(get_pr_field "$pr_number" body)
+        if [ "$fill_explicit" != "true" ] && [ -n "$existing_body" ]; then
           log_info "Existing PR body is not empty. Skipping auto-update; use --fill to replace it."
+        else
+          resolve_existing_generation_base_branch
+          ensure_base_ref_for_generation
+          count_commits_since_base
+        fi
+
+        if [ "$fill_explicit" != "true" ] && [ -n "$existing_body" ]; then
+          :
+        elif [ "$commit_count" -eq 0 ]; then
+          log_info "No new commits compared to $base_branch. Skipping auto-update."
         else
           generate_body_from_commits
           update_body="true"
@@ -1913,7 +1973,7 @@ if [ "$use_copilot" = "true" ]; then
     die "--copilot cannot be combined with --title/--body/--body-file."
   fi
 
-  if ! generate_title_body_with_copilot; then
+  if ! can_run_copilot_generation || ! generate_title_body_with_copilot; then
     copilot_fallback
   fi
 fi

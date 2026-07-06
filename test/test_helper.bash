@@ -133,6 +133,10 @@ case "${1-}" in
   push)
     exit 0
     ;;
+  fetch)
+    [ "${GIT_PR_FAKE_FETCH_FAIL:-false}" != "true" ] || exit 1
+    exit 0
+    ;;
   log)
     if [ "${2-}" = "-1" ]; then
       printf '%s\n' "${GIT_PR_FAKE_LAST_SUBJECT:-Test title}"
@@ -241,6 +245,9 @@ case "${1-} ${2-}" in
           ;;
         headRefOid)
           printf '%s\n' "${GIT_PR_FAKE_PR_HEAD_SHA:-local-head}"
+          ;;
+        baseRefName)
+          printf '%s\n' "${GIT_PR_FAKE_PR_BASE:-main}"
           ;;
         *)
           exit 1
