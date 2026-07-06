@@ -340,6 +340,18 @@ case "${1-} ${2-}" in
     exit 0
     ;;
   "pr merge")
+    if has_arg --auto "$@" && has_arg --admin "$@"; then
+      printf 'specify only one of `--auto`, `--disable-auto`, or `--admin`\n' >&2
+      exit 1
+    fi
+    if has_arg --disable-auto "$@" && has_arg --admin "$@"; then
+      printf 'specify only one of `--auto`, `--disable-auto`, or `--admin`\n' >&2
+      exit 1
+    fi
+    if has_arg --auto "$@" && has_arg --disable-auto "$@"; then
+      printf 'specify only one of `--auto`, `--disable-auto`, or `--admin`\n' >&2
+      exit 1
+    fi
     exit 0
     ;;
   *)

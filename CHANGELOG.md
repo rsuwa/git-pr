@@ -5,6 +5,9 @@
 - Redact credentials and query strings in more install/update/remote failure
   messages, and let `git pr update` target the invoked executable or an
   explicit `GIT_PR_UPDATE_INSTALL_PATH`.
+- Reject unsafe `git-pr` auto-merge use of `--admin`, warn for the deprecated
+  `git pr merge` alias, and clarify that GitHub CLI may merge or enqueue when
+  auto-merge requirements are already met.
 
 ## 0.2.0 - 2026-07-06
 

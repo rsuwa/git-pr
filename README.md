@@ -193,7 +193,7 @@ a local base ref.
 | `-a, --enable-auto-merge` | Enable auto-merge after creating or updating a pull request. |
 | `-m, --merge-method <method>` | Auto-merge method: `merge`, `squash`, or `rebase`. Requires `--enable-auto-merge` or `git pr auto-merge`. |
 | `--delete-branch` | Delete the branch after auto-merge. Requires `--enable-auto-merge` or `git pr auto-merge`. |
-| `--admin` | Pass `--admin` to `gh pr merge` for auto-merge. Requires `--enable-auto-merge` or `git pr auto-merge`. |
+| `--admin` | Rejected with `git-pr` auto-merge because GitHub CLI treats it as an immediate admin merge. Use `gh pr merge --admin` directly if you intend to bypass requirements. |
 | `--match-head-commit <sha>` | Require the pull request head commit to match the given SHA when enabling auto-merge. If omitted, `git-pr` uses the local `HEAD` SHA. Requires `--enable-auto-merge` or `git pr auto-merge`. |
 | `--disable-auto-merge` | Disable auto-merge on the current PR. Only valid with `git pr auto-merge`. |
 | `--draft` | Create the pull request as a draft. |
@@ -280,6 +280,11 @@ future release:
 | `--copilot-update` | `git pr copilot --mode=update` |
 | `--auto-merge` | `--enable-auto-merge` |
 | `git pr merge` | `git pr auto-merge` |
+
+`git pr auto-merge` delegates to `gh pr merge --auto`. Depending on repository
+rules and merge queue state, GitHub CLI may enable deferred auto-merge, add the
+pull request to a merge queue, or merge immediately when requirements are
+already met.
 
 ## Existing Pull Requests
 

@@ -44,10 +44,11 @@ setup() {
   export GIT_PR_FAKE_PR_NUMBER=123
   export GIT_PR_FAKE_PR_HEAD_SHA=abc123
 
-  run "$BATS_TEST_DIRNAME/../git-pr" auto-merge --merge-method squash --delete-branch --admin --match-head-commit abc123
+  run "$BATS_TEST_DIRNAME/../git-pr" auto-merge --merge-method squash --delete-branch --match-head-commit abc123
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr merge 123 --repo example/repo --auto --squash --match-head-commit abc123 --delete-branch --admin"
+  assert_log_contains "gh pr merge 123 --repo example/repo --auto --squash --match-head-commit abc123 --delete-branch"
+  [[ "$output" == *"INFO: Auto-merge requested for PR #123."* ]]
 }
 
 @test "auto-merge defaults match-head-commit to local HEAD" {
@@ -58,6 +59,18 @@ setup() {
   run "$BATS_TEST_DIRNAME/../git-pr" auto-merge
 
   [ "$status" -eq 0 ]
+  assert_log_contains "gh pr merge 123 --repo example/repo --auto --merge --match-head-commit local-head"
+}
+
+@test "deprecated merge alias warns and maps to auto-merge" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_HEAD_SHA=local-head
+  export GIT_PR_FAKE_PR_HEAD_SHA=local-head
+
+  run "$BATS_TEST_DIRNAME/../git-pr" merge
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: 'git pr merge' is deprecated. Use 'git pr auto-merge'."* ]]
   assert_log_contains "gh pr merge 123 --repo example/repo --auto --merge --match-head-commit local-head"
 }
 
