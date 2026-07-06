@@ -160,6 +160,14 @@ log_call() {
 
 log_call "$@"
 
+fake_pr_number() {
+  if [ -n "${GIT_PR_FAKE_PR_NUMBER:-}" ]; then
+    printf '%s\n' "$GIT_PR_FAKE_PR_NUMBER"
+  elif [ -f "$GIT_PR_FAKE_LOG.created-pr" ]; then
+    cat "$GIT_PR_FAKE_LOG.created-pr"
+  fi
+}
+
 case "${1-} ${2-}" in
   "auth status")
     [ "${GIT_PR_FAKE_GH_AUTH:-true}" = "true" ] || exit 1
@@ -168,17 +176,25 @@ case "${1-} ${2-}" in
     printf '%s\n' "${GIT_PR_FAKE_DEFAULT_BRANCH:-main}"
     ;;
   "pr view")
-    if [ "$#" -ge 4 ] && [ "${3-}" = "--json" ]; then
-      case "${4-}" in
+    json_field=""
+    for ((i = 1; i <= $#; i++)); do
+      if [ "${!i}" = "--json" ]; then
+        next=$((i + 1))
+        json_field="${!next-}"
+        break
+      fi
+    done
+    if [ -n "$json_field" ]; then
+      case "$json_field" in
         number)
           [ -n "${GIT_PR_FAKE_PR_NUMBER:-}" ] || exit 1
           printf '%s\n' "$GIT_PR_FAKE_PR_NUMBER"
           ;;
         title)
-          printf '%s\n' "${GIT_PR_FAKE_PR_TITLE:-Existing title}"
+          printf '%s\n' "${GIT_PR_FAKE_PR_TITLE-Existing title}"
           ;;
         body)
-          printf '%s\n' "${GIT_PR_FAKE_PR_BODY:-Existing body}"
+          printf '%s\n' "${GIT_PR_FAKE_PR_BODY-Existing body}"
           ;;
         headRefOid)
           printf '%s\n' "${GIT_PR_FAKE_PR_HEAD_SHA:-local-head}"
@@ -195,17 +211,40 @@ case "${1-} ${2-}" in
     fi
     ;;
   "pr list")
-    if [ -n "${GIT_PR_FAKE_PR_NUMBER:-}" ]; then
+    jq_expr=""
+    pr_number_value="$(fake_pr_number)"
+    for ((i = 1; i <= $#; i++)); do
+      if [ "${!i}" = "--jq" ]; then
+        next=$((i + 1))
+        jq_expr="${!next-}"
+        break
+      fi
+    done
+    if [ -n "$jq_expr" ]; then
+      [ -n "$pr_number_value" ] || exit 0
+      case "$jq_expr" in
+        *number*)
+          printf '%s\n' "$pr_number_value"
+          ;;
+        *headRefOid*)
+          printf '%s\n' "${GIT_PR_FAKE_PR_HEAD_SHA:-local-head}"
+          ;;
+        *)
+          exit 1
+          ;;
+      esac
+    elif [ -n "$pr_number_value" ]; then
       printf '[{"number":%s,"headRefOid":"%s","title":"%s","body":"%s"}]\n' \
-        "$GIT_PR_FAKE_PR_NUMBER" \
+        "$pr_number_value" \
         "${GIT_PR_FAKE_PR_HEAD_SHA:-local-head}" \
-        "${GIT_PR_FAKE_PR_TITLE:-Existing title}" \
-        "${GIT_PR_FAKE_PR_BODY:-Existing body}"
+        "${GIT_PR_FAKE_PR_TITLE-Existing title}" \
+        "${GIT_PR_FAKE_PR_BODY-Existing body}"
     else
       printf '[]\n'
     fi
     ;;
   "pr create")
+    printf '%s\n' "${GIT_PR_FAKE_CREATED_PR_NUMBER:-1}" > "$GIT_PR_FAKE_LOG.created-pr"
     printf 'https://github.com/example/repo/pull/1\n'
     ;;
   "pr edit"|"pr merge")
@@ -218,6 +257,34 @@ case "${1-} ${2-}" in
 esac
 FAKE_GH
   chmod 755 "$GIT_PR_FAKE_BIN/gh"
+}
+
+create_fake_copilot() {
+  cat > "$GIT_PR_FAKE_BIN/copilot" <<'FAKE_COPILOT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+{
+  printf 'copilot'
+  for arg in "$@"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n'
+} >> "$GIT_PR_FAKE_LOG"
+
+if [ "${GIT_PR_FAKE_COPILOT_FAIL:-false}" = "true" ]; then
+  exit 1
+fi
+
+cat <<'COPILOT_RESPONSE'
+__GIT_PR_TITLE__
+Generated title
+__GIT_PR_BODY__
+Generated body
+__GIT_PR_END__
+COPILOT_RESPONSE
+FAKE_COPILOT
+  chmod 755 "$GIT_PR_FAKE_BIN/copilot"
 }
 
 assert_log_contains() {

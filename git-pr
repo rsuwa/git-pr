@@ -3,6 +3,10 @@
 
 set -euo pipefail
 
+GIT_PR_VERSION="0.1.0"
+cleanup_paths=()
+cleanup_trap_registered="false"
+
 usage() {
   cat <<'USAGE'
 Usage: git pr [create] [options]
@@ -35,6 +39,7 @@ Options:
   --no-fill                Do not auto-fill; generate if missing
   --no-edit                Do not edit existing PR title/body
   -a, --enable-auto-merge  Enable auto-merge after checks pass (for create/update)
+  --auto-merge             (deprecated) Alias for --enable-auto-merge
   -m, --merge-method <m>   merge|squash|rebase (default: merge)
   --delete-branch          Delete branch after auto-merge (auto-merge only)
   --admin                  Use admin privileges for auto-merge (auto-merge only)
@@ -42,8 +47,13 @@ Options:
   --disable-auto-merge     Disable auto-merge for existing PR (auto-merge only)
   --draft                  Create as draft
   -w, --web                Open the PR in a browser
+  --version                Show version
   -h, --help               Show help
 USAGE
+}
+
+version() {
+  printf 'git-pr %s\n' "$GIT_PR_VERSION"
 }
 
 log_info() {
@@ -63,6 +73,35 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"
 }
 
+require_option_value() {
+  local option="$1"
+  local remaining="$2"
+
+  if [ "$remaining" -lt 2 ]; then
+    die "$option requires a value."
+  fi
+}
+
+cleanup_registered_paths() {
+  local path
+
+  for path in "${cleanup_paths[@]}"; do
+    if [ -n "$path" ]; then
+      rm -rf "$path"
+    fi
+  done
+}
+
+register_cleanup_path() {
+  cleanup_paths+=("$1")
+  if [ "$cleanup_trap_registered" != "true" ]; then
+    trap cleanup_registered_paths EXIT
+    trap 'cleanup_registered_paths; exit 130' INT
+    trap 'cleanup_registered_paths; exit 143' TERM
+    cleanup_trap_registered="true"
+  fi
+}
+
 generate_title_body_with_copilot() {
   if ! command -v copilot >/dev/null 2>&1; then
     log_warn "Copilot CLI not found; falling back."
@@ -80,33 +119,41 @@ generate_title_body_with_copilot() {
     diff_pathspec+=(":(exclude)$exclude_path")
   done
 
-  if git -C "$repo_root" diff --quiet "$base_ref..HEAD" -- "${diff_pathspec[@]}"; then
+  if git -C "$repo_root" diff --quiet "$base_ref...HEAD" -- "${diff_pathspec[@]}"; then
     log_warn "No diff to summarize; falling back."
     return 1
   fi
 
+  local temp_dir
+  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-pr.XXXXXX") || die "Failed to create temporary directory."
+  chmod 700 "$temp_dir" 2>/dev/null || true
+  register_cleanup_path "$temp_dir"
+
   local diff_file
-  diff_file=$(mktemp -p "$repo_root" .git-pr-diff-XXXXXX)
+  diff_file="$temp_dir/diff.txt"
 
   {
     printf "Diff stat:\n"
-    git -C "$repo_root" diff --stat "$base_ref..HEAD" -- "${diff_pathspec[@]}"
+    git -C "$repo_root" diff --stat "$base_ref...HEAD" -- "${diff_pathspec[@]}"
     printf "\nDiff:\n"
-    git -C "$repo_root" diff "$base_ref..HEAD" -- "${diff_pathspec[@]}"
+    git -C "$repo_root" diff "$base_ref...HEAD" -- "${diff_pathspec[@]}"
   } > "$diff_file"
 
   local file_size
   file_size=$(wc -c < "$diff_file" | tr -d ' ')
   if [ "$file_size" -gt "$max_bytes" ]; then
-    truncate_utf8 "$max_bytes" < "$diff_file" > "$diff_file.tmp"
-    mv "$diff_file.tmp" "$diff_file"
+    local truncated_diff_file
+    truncated_diff_file="$temp_dir/diff-truncated.txt"
+    truncate_utf8 "$max_bytes" < "$diff_file" > "$truncated_diff_file"
+    mv "$truncated_diff_file" "$diff_file"
     printf "\n\n[Diff truncated to %s bytes]\n" "$max_bytes" >> "$diff_file"
   fi
 
   local prompt_file
-  local prompt_ref
-  local copilot_log_dir="${GIT_PR_COPILOT_LOG_DIR:-$repo_root/.git-pr-logs}"
+  local state_home="${XDG_STATE_HOME:-${HOME:-$repo_root/.git}/.local/state}"
+  local copilot_log_dir="${GIT_PR_COPILOT_LOG_DIR:-$state_home/git-pr/copilot-logs}"
   local copilot_log_always="${GIT_PR_COPILOT_LOG:-}"
+  local copilot_log_content="${GIT_PR_COPILOT_LOG_CONTENT:-}"
   local copilot_log_tag
   copilot_log_tag="$(date +%Y%m%d-%H%M%S)-$$"
   local existing_note=""
@@ -164,8 +211,7 @@ EOF
     section_note=""
   fi
 
-  prompt_file=$(mktemp -p "$repo_root" .git-pr-prompt-XXXXXX)
-  prompt_ref="${prompt_file#"$repo_root"/}"
+  prompt_file="$temp_dir/prompt.txt"
 
   cat <<EOF > "$prompt_file"
 $language_instruction
@@ -194,26 +240,33 @@ EOF
   log_copilot_debug() {
     local reason="$1"
     mkdir -p "$copilot_log_dir"
+    chmod 700 "$copilot_log_dir" 2>/dev/null || true
     local base="$copilot_log_dir/copilot-$copilot_log_tag"
-    printf '%s\n' "$reason" > "$base.reason"
-    printf '%s\n' "$response" > "$base.response"
-    cp "$prompt_file" "$base.prompt" 2>/dev/null || true
-    cp "$diff_file" "$base.diff" 2>/dev/null || true
+    (
+      umask 077
+      printf '%s\n' "$reason" > "$base.reason"
+      if [ -n "$copilot_log_content" ]; then
+        printf '%s\n' "$response" > "$base.response"
+        cp "$prompt_file" "$base.prompt" 2>/dev/null || true
+        cp "$diff_file" "$base.diff" 2>/dev/null || true
+      else
+        printf 'Prompt, diff, and response content omitted. Set GIT_PR_COPILOT_LOG_CONTENT=1 to keep them.\n' > "$base.meta"
+      fi
+    )
     log_warn "Copilot debug log saved: $base.*"
   }
 
-  response=$(cd "$repo_root" && copilot -p "@$prompt_ref") || {
+  response=$(cd "$repo_root" && copilot -s --no-custom-instructions --stream off -p "@$prompt_file") || {
     log_warn "Copilot CLI failed; falling back."
     log_copilot_debug "copilot-cli-failed"
-    rm -f "$diff_file" "$diff_file.tmp" "$prompt_file"
     return 1
   }
   response=$(printf '%s\n' "$response" | sed 's/\r$//')
 
   local title_file
   local body_file
-  title_file=$(mktemp -p "$repo_root" .git-pr-title-XXXXXX)
-  body_file=$(mktemp -p "$repo_root" .git-pr-body-XXXXXX)
+  title_file="$temp_dir/title.txt"
+  body_file="$temp_dir/body.txt"
   if printf '%s\n' "$response" | awk -v tf="$title_file" -v bf="$body_file" '
     function trim(s) {
       sub(/^[[:space:]]+/, "", s)
@@ -301,14 +354,12 @@ EOF
     body=""
     log_warn "Failed to parse Copilot output; falling back."
     log_copilot_debug "copilot-parse-failed"
-    rm -f "$diff_file" "$diff_file.tmp" "$prompt_file"
     return 1
   fi
 
   if [ -n "$copilot_log_always" ]; then
     log_copilot_debug "copilot-success"
   fi
-  rm -f "$diff_file" "$diff_file.tmp" "$prompt_file"
   return 0
 }
 
@@ -517,48 +568,299 @@ resolve_template_file() {
   return 0
 }
 
+default_update_checksum_url() {
+  case "$1" in
+    */*)
+      printf '%s/SHA256SUMS\n' "${1%/*}"
+      ;;
+    *)
+      printf 'SHA256SUMS\n'
+      ;;
+  esac
+}
+
+download_update_file() {
+  local url="$1"
+  local output="$2"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$output"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$output" "$url"
+  else
+    die "Missing command: curl or wget"
+  fi
+}
+
+require_sha256_tool() {
+  if command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; then
+    return 0
+  fi
+
+  die "Missing command: sha256sum or shasum"
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+expected_sha256() {
+  local expected_asset="$1"
+  local sums_file="$2"
+
+  awk -v expected_asset="$expected_asset" '
+    NF >= 2 {
+      file = $2
+      sub(/^\*/, "", file)
+      if (file == expected_asset) {
+        print $1
+        found = 1
+        exit
+      }
+    }
+    END {
+      if (!found) {
+        exit 1
+      }
+    }
+  ' "$sums_file"
+}
+
+verify_update_checksum() {
+  local file="$1"
+  local sums_file="$2"
+  local expected
+  local actual
+
+  expected=$(expected_sha256 "git-pr" "$sums_file") || return 1
+  actual=$(sha256_file "$file") || return 1
+
+  [ "$actual" = "$expected" ]
+}
+
+verify_direct_update_checksum() {
+  local file="$1"
+  local expected="$2"
+  local actual
+
+  actual=$(sha256_file "$file") || return 1
+  [ "$actual" = "$expected" ]
+}
+
 update_self() {
   local default_update_url="https://github.com/rsuwa/git-pr/releases/latest/download/git-pr"
   local update_url="${GIT_PR_UPDATE_URL:-$default_update_url}"
+  local checksum_url="${GIT_PR_UPDATE_CHECKSUM_URL:-}"
+  local expected_sha256_value="${GIT_PR_UPDATE_SHA256:-}"
   local install_path
   local install_dir
   local temp_file
+  local checksum_file
 
   install_path=$(command -v git-pr 2>/dev/null || true)
   if [ -z "$install_path" ]; then
     install_path="${HOME}/.local/bin/git-pr"
   fi
+  if [ -z "$checksum_url" ] && [ -z "$expected_sha256_value" ]; then
+    checksum_url=$(default_update_checksum_url "$update_url")
+  fi
   install_dir=$(dirname "$install_path")
   mkdir -p "$install_dir"
 
-  temp_file=$(mktemp)
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$update_url" -o "$temp_file" || {
-      rm -f "$temp_file"
-      die "Failed to download git-pr from $update_url"
-    }
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$temp_file" "$update_url" || {
-      rm -f "$temp_file"
-      die "Failed to download git-pr from $update_url"
-    }
+  if [ -L "$install_path" ]; then
+    die "Refusing to update symlink target: $install_path"
+  fi
+
+  if [ -d "$install_path" ]; then
+    die "Refusing to update directory target: $install_path"
+  fi
+
+  require_sha256_tool
+
+  temp_file=$(mktemp "$install_dir/.git-pr.XXXXXX") || die "Failed to create temporary file in $install_dir"
+  checksum_file=""
+
+  download_update_file "$update_url" "$temp_file" || {
+    rm -f "$temp_file" "$checksum_file"
+    die "Failed to download git-pr from $update_url"
+  }
+
+  if [ -n "$expected_sha256_value" ]; then
+    if ! verify_direct_update_checksum "$temp_file" "$expected_sha256_value"; then
+      rm -f "$temp_file" "$checksum_file"
+      die "SHA256 verification failed for git-pr"
+    fi
   else
-    rm -f "$temp_file"
-    die "Missing command: curl or wget"
+    checksum_file=$(mktemp "$install_dir/.git-pr.SHA256SUMS.XXXXXX") || {
+      rm -f "$temp_file"
+      die "Failed to create checksum temporary file in $install_dir"
+    }
+    download_update_file "$checksum_url" "$checksum_file" || {
+      rm -f "$temp_file" "$checksum_file"
+      die "Failed to download SHA256SUMS from $checksum_url"
+    }
+
+    if ! verify_update_checksum "$temp_file" "$checksum_file"; then
+      rm -f "$temp_file" "$checksum_file"
+      die "SHA256 verification failed for git-pr"
+    fi
   fi
 
   bash -n "$temp_file" || {
-    rm -f "$temp_file"
+    rm -f "$temp_file" "$checksum_file"
     die "Downloaded git-pr is not valid Bash."
   }
 
-  install -m 755 "$temp_file" "$install_path" || {
-    rm -f "$temp_file"
+  chmod 755 "$temp_file" || {
+    rm -f "$temp_file" "$checksum_file"
+    die "Failed to make downloaded git-pr executable."
+  }
+
+  if [ -L "$install_path" ]; then
+    rm -f "$temp_file" "$checksum_file"
+    die "Refusing to update symlink target: $install_path"
+  fi
+
+  mv -f "$temp_file" "$install_path" || {
+    rm -f "$temp_file" "$checksum_file"
     die "Failed to install git-pr to $install_path"
   }
-  rm -f "$temp_file"
+  rm -f "$checksum_file"
 
   log_info "Updated git-pr at $install_path"
+}
+
+get_current_pr_number() {
+  local output
+
+  if ! output=$(gh pr list --repo "$github_repo" --head "$current_branch" --state open \
+    --json number,headRepositoryOwner \
+    --jq "map(select(.headRepositoryOwner.login == \"$github_owner\")) | .[0].number // \"\"" 2>&1); then
+    die "Failed to query pull request for current branch: $output"
+  fi
+  printf '%s' "$output"
+}
+
+get_pr_field() {
+  local pr_number="$1"
+  local field="$2"
+  local output
+
+  if ! output=$(gh pr view "$pr_number" --repo "$github_repo" --json "$field" --jq ".$field // \"\"" 2>&1); then
+    die "Failed to read PR #$pr_number field '$field': $output"
+  fi
+  printf '%s' "$output"
+}
+
+github_repo_from_origin_url() {
+  local url="$1"
+  local host=""
+  local path=""
+  local rest
+
+  case "$url" in
+    git@*:*)
+      rest="${url#git@}"
+      host="${rest%%:*}"
+      path="${rest#*:}"
+      ;;
+    ssh://git@*/*)
+      rest="${url#ssh://git@}"
+      host="${rest%%/*}"
+      path="${rest#*/}"
+      ;;
+    https://*/*/*)
+      rest="${url#https://}"
+      host="${rest%%/*}"
+      path="${rest#*/}"
+      ;;
+    http://*/*/*)
+      rest="${url#http://}"
+      host="${rest%%/*}"
+      path="${rest#*/}"
+      ;;
+    */*)
+      path="$url"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  path="${path%.git}"
+  case "$path" in
+    */*)
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  if [ -n "$host" ] && [ "$host" != "github.com" ]; then
+    printf '%s/%s' "$host" "$path"
+  else
+    printf '%s' "$path"
+  fi
+}
+
+github_owner_from_repo() {
+  local repo="$1"
+  local owner_part
+
+  owner_part="${repo%/*}"
+  printf '%s' "${owner_part##*/}"
+}
+
+merge_flag_for_method() {
+  case "$merge_method" in
+    merge)
+      printf '%s' "--merge"
+      ;;
+    squash)
+      printf '%s' "--squash"
+      ;;
+    rebase)
+      printf '%s' "--rebase"
+      ;;
+  esac
+}
+
+expected_auto_merge_head() {
+  if [ -n "$auto_merge_match_head" ]; then
+    printf '%s' "$auto_merge_match_head"
+  else
+    git -C "$repo_root" rev-parse HEAD
+  fi
+}
+
+enable_auto_merge() {
+  local pr_number="$1"
+  local expected_head
+  local pr_head
+  local merge_flag
+  local -a merge_cmd
+
+  expected_head=$(expected_auto_merge_head)
+  pr_head=$(get_pr_field "$pr_number" headRefOid)
+  if [ "$pr_head" != "$expected_head" ]; then
+    die "PR #$pr_number head SHA ($pr_head) does not match expected head SHA ($expected_head). Push the current branch or pass --match-head-commit."
+  fi
+
+  merge_flag=$(merge_flag_for_method)
+  merge_cmd=(gh pr merge "$pr_number" --repo "$github_repo" --auto "$merge_flag" --match-head-commit "$expected_head")
+  if [ "$auto_merge_delete_branch" = "true" ]; then
+    merge_cmd+=(--delete-branch)
+  fi
+  if [ "$auto_merge_admin" = "true" ]; then
+    merge_cmd+=(--admin)
+  fi
+
+  "${merge_cmd[@]}"
+  log_info "Auto-merge enabled for PR #$pr_number."
 }
 
 action="create"
@@ -582,6 +884,10 @@ if [ $# -gt 0 ]; then
       ;;
     -h|--help)
       usage
+      exit 0
+      ;;
+    --version)
+      version
       exit 0
       ;;
   esac
@@ -639,21 +945,25 @@ diff_excludes=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -b|--base)
+      require_option_value "$1" "$#"
       base_branch="$2"
       base_branch_explicit="true"
       shift 2
       ;;
     -t|--title)
+      require_option_value "$1" "$#"
       title="$2"
       fill="false"
       shift 2
       ;;
     -d|--body)
+      require_option_value "$1" "$#"
       body="$2"
       fill="false"
       shift 2
       ;;
     -F|--body-file)
+      require_option_value "$1" "$#"
       body_file="$2"
       fill="false"
       shift 2
@@ -663,6 +973,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -T|--template)
+      require_option_value "$1" "$#"
       template_file="$2"
       shift 2
       ;;
@@ -671,6 +982,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --label)
+      require_option_value "$1" "$#"
       append_label_args "$2"
       shift 2
       ;;
@@ -679,6 +991,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --reviewer)
+      require_option_value "$1" "$#"
       append_reviewer_args "$2"
       shift 2
       ;;
@@ -687,6 +1000,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --assignee)
+      require_option_value "$1" "$#"
       append_assignee_args "$2"
       shift 2
       ;;
@@ -721,6 +1035,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --mode)
+      require_option_value "$1" "$#"
       copilot_mode="$2"
       copilot_mode_explicit="true"
       shift 2
@@ -731,6 +1046,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --detail)
+      require_option_value "$1" "$#"
       copilot_detail="$2"
       copilot_detail_explicit="true"
       shift 2
@@ -741,6 +1057,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --language)
+      require_option_value "$1" "$#"
       language="$2"
       language_explicit="true"
       shift 2
@@ -751,6 +1068,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --diff-exclude)
+      require_option_value "$1" "$#"
       diff_exclude_args+=("$2")
       diff_exclude_explicit="true"
       shift 2
@@ -808,6 +1126,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -m|--merge-method)
+      require_option_value "$1" "$#"
       merge_method="$2"
       merge_method_explicit="true"
       shift 2
@@ -821,6 +1140,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --match-head-commit)
+      require_option_value "$1" "$#"
       auto_merge_match_head="$2"
       auto_merge_match_head_explicit="true"
       shift 2
@@ -846,6 +1166,10 @@ while [ $# -gt 0 ]; do
       ;;
     -h|--help)
       usage
+      exit 0
+      ;;
+    --version)
+      version
       exit 0
       ;;
     *)
@@ -882,6 +1206,10 @@ fi
 
 if { [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ]; } && [ "$use_copilot" != "true" ]; then
   die "--mode/--detail require 'git pr copilot' or --copilot."
+fi
+
+if { [ "$language_explicit" = "true" ] || [ "$diff_exclude_explicit" = "true" ]; } && [ "$use_copilot" != "true" ]; then
+  die "--language/--diff-exclude require 'git pr copilot' or --copilot."
 fi
 
 if [ "$copilot_mode_explicit" = "true" ]; then
@@ -984,29 +1312,33 @@ require_cmd git
 require_cmd gh
 
 if ! gh auth status >/dev/null 2>&1; then
-  log_warn "GitHub CLI is not authenticated. Run: gh auth login"
+  die "GitHub CLI is not authenticated. Run: gh auth login"
 fi
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "Not a git repository."
 current_branch=$(git -C "$repo_root" branch --show-current)
 [ -n "$current_branch" ] || die "Detached HEAD. Checkout a branch first."
-load_git_pr_config
+if [ "$use_copilot" = "true" ]; then
+  load_git_pr_config
+fi
 
-if ! git -C "$repo_root" remote get-url origin >/dev/null 2>&1; then
+if ! origin_url=$(git -C "$repo_root" remote get-url origin 2>/dev/null); then
   die "Remote 'origin' not found."
 fi
+github_repo=$(github_repo_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $origin_url"
+github_owner=$(github_owner_from_repo "$github_repo")
 
 if [ "$action" != "auto-merge" ]; then
   if [ "$base_branch_explicit" = "false" ]; then
     base_branch=$(git -C "$repo_root" config --get "branch.$current_branch.gh-merge-base" || true)
     if [ -z "$base_branch" ]; then
+      base_branch=$(gh repo view --repo "$github_repo" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
+    fi
+    if [ -z "$base_branch" ]; then
       default_ref=$(git -C "$repo_root" symbolic-ref -q --short refs/remotes/origin/HEAD || true)
       if [ -n "$default_ref" ]; then
         base_branch="${default_ref#origin/}"
       fi
-    fi
-    if [ -z "$base_branch" ]; then
-      base_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
     fi
     if [ -z "$base_branch" ]; then
       die "Base branch not specified and default branch could not be determined. Use --base or set branch.$current_branch.gh-merge-base."
@@ -1019,72 +1351,47 @@ if [ "$action" != "auto-merge" ]; then
 fi
 
 if [ "$action" = "auto-merge" ]; then
-  pr_number=$(gh pr view --json number --jq '.number' 2>/dev/null || true)
+  pr_number=$(get_current_pr_number)
   [ -n "$pr_number" ] || die "No open PR found for current branch."
 
   if [ "$auto_merge_disable" = "true" ]; then
-    gh pr merge --disable-auto "$pr_number"
+    gh pr merge "$pr_number" --repo "$github_repo" --disable-auto
     log_info "Auto-merge disabled for PR #$pr_number."
     exit 0
   fi
 
-  case "$merge_method" in
-    merge)
-      merge_flag="--merge"
-      ;;
-    squash)
-      merge_flag="--squash"
-      ;;
-    rebase)
-      merge_flag="--rebase"
-      ;;
-  esac
-
-  merge_cmd=(gh pr merge --auto "$merge_flag" "$pr_number")
-  if [ "$auto_merge_delete_branch" = "true" ]; then
-    merge_cmd+=(--delete-branch)
-  fi
-  if [ "$auto_merge_admin" = "true" ]; then
-    merge_cmd+=(--admin)
-  fi
-  if [ -n "$auto_merge_match_head" ]; then
-    merge_cmd+=(--match-head-commit "$auto_merge_match_head")
-  fi
-
-  "${merge_cmd[@]}"
-  log_info "Auto-merge enabled for PR #$pr_number."
+  enable_auto_merge "$pr_number"
   exit 0
 fi
 
-if git -C "$repo_root" show-ref --verify --quiet "refs/heads/$base_branch"; then
-  base_ref="$base_branch"
-elif git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/$base_branch"; then
+if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/$base_branch"; then
   base_ref="origin/$base_branch"
+elif git -C "$repo_root" show-ref --verify --quiet "refs/heads/$base_branch"; then
+  base_ref="$base_branch"
 else
   die "Base branch '$base_branch' not found."
 fi
 
 commit_count=$(git -C "$repo_root" rev-list --count "$base_ref..HEAD" || true)
-pr_number=$(gh pr view --json number --jq '.number' 2>/dev/null || true)
+pr_number=$(get_current_pr_number)
 
-if [ -z "$pr_number" ] && [ "$commit_count" -eq 0 ]; then
-  die "No commits to open a PR (branch is up to date with $base_branch)."
+if [ -n "$body_file" ] && [ "$body_file" != "-" ] && [ ! -f "$body_file" ]; then
+  die "Body file not found: $body_file"
 fi
 
-if ! git -C "$repo_root" diff --quiet || ! git -C "$repo_root" diff --cached --quiet; then
-  log_warn "Working tree has uncommitted changes. They won't be included in the PR."
+resolve_template_file
+
+if [ -n "$template_file" ] && [ "$template_resolved" != "true" ]; then
+  die "Template file not found: $template_file"
 fi
 
-if ! git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
-  log_info "Pushing and setting upstream to origin/$current_branch"
-  git -C "$repo_root" push -u origin HEAD
-else
-  log_info "Pushing current branch"
-  git -C "$repo_root" push
-fi
-
-if [ -z "$pr_number" ]; then
-  pr_number=$(gh pr view --json number --jq '.number' 2>/dev/null || true)
+if [ -n "$pr_number" ]; then
+  if [ "$editor" = "true" ] || [ -n "$template_file" ]; then
+    die "--editor/--template are only supported when creating a PR."
+  fi
+  if [ "$draft_explicit" = "true" ]; then
+    die "--draft is only supported when creating a PR."
+  fi
 fi
 
 if [ "$use_copilot" = "true" ]; then
@@ -1106,7 +1413,34 @@ if [ "$use_copilot" = "true" ]; then
   fi
 fi
 
+if [ -z "$pr_number" ] && [ "$commit_count" -eq 0 ]; then
+  die "No commits to open a PR (branch is up to date with $base_branch)."
+fi
+
+if ! git -C "$repo_root" diff --quiet || ! git -C "$repo_root" diff --cached --quiet; then
+  log_warn "Working tree has uncommitted changes. They won't be included in the PR."
+fi
+
+if ! git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
+  log_info "Pushing and setting upstream to origin/$current_branch"
+  git -C "$repo_root" push -u origin HEAD
+else
+  log_info "Pushing current branch"
+  git -C "$repo_root" push
+fi
+
+if [ -z "$pr_number" ]; then
+  pr_number=$(get_current_pr_number)
+fi
+
 copilot_fallback() {
+  if [ "$copilot_update_effective" = "true" ]; then
+    log_warn "Copilot failed; leaving existing PR title/body unchanged."
+    use_copilot="false"
+    fill="false"
+    return 0
+  fi
+
   if [ -n "$template_file" ]; then
     log_warn "Falling back to template for PR body."
     use_copilot="false"
@@ -1128,20 +1462,35 @@ if [ -n "$pr_number" ]; then
 
   if [ "$skip_edit" = "true" ]; then
     log_info "Skipping PR title/body update (--no-edit)."
-    if [ ${#edit_label_args[@]} -gt 0 ] || [ ${#edit_reviewer_args[@]} -gt 0 ] || [ ${#edit_assignee_args[@]} -gt 0 ]; then
-      gh pr edit "$pr_number" "${edit_label_args[@]}" "${edit_reviewer_args[@]}" "${edit_assignee_args[@]}"
+    if [ "$base_branch_explicit" = "true" ] || \
+       [ ${#edit_label_args[@]} -gt 0 ] || [ ${#edit_reviewer_args[@]} -gt 0 ] || [ ${#edit_assignee_args[@]} -gt 0 ]; then
+      pr_edit_cmd=(gh pr edit "$pr_number" --repo "$github_repo")
+      if [ "$base_branch_explicit" = "true" ]; then
+        pr_edit_cmd+=(--base "$base_branch")
+      fi
+      if [ ${#edit_label_args[@]} -gt 0 ]; then
+        pr_edit_cmd+=("${edit_label_args[@]}")
+      fi
+      if [ ${#edit_reviewer_args[@]} -gt 0 ]; then
+        pr_edit_cmd+=("${edit_reviewer_args[@]}")
+      fi
+      if [ ${#edit_assignee_args[@]} -gt 0 ]; then
+        pr_edit_cmd+=("${edit_assignee_args[@]}")
+      fi
+      "${pr_edit_cmd[@]}"
     fi
   else
     update_title="false"
     update_body="false"
+    update_base="$base_branch_explicit"
 
     if [ "$use_copilot" = "true" ]; then
       if [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ]; then
         die "--copilot cannot be combined with --title/--body/--body-file."
       fi
       if [ "$copilot_update_effective" = "true" ]; then
-        copilot_existing_title=$(gh pr view "$pr_number" --json title --jq '.title' 2>/dev/null || true)
-        copilot_existing_body=$(gh pr view "$pr_number" --json body --jq '.body' 2>/dev/null || true)
+        copilot_existing_title=$(get_pr_field "$pr_number" title)
+        copilot_existing_body=$(get_pr_field "$pr_number" body)
         update_title="false"
         update_body="true"
       else
@@ -1167,6 +1516,8 @@ if [ -n "$pr_number" ]; then
       elif [ "$fill" = "true" ]; then
         if [ "$commit_count" -eq 0 ]; then
           log_info "No new commits compared to $base_branch. Skipping auto-update."
+        elif [ "$fill_explicit" != "true" ] && [ -n "$(get_pr_field "$pr_number" body)" ]; then
+          log_info "Existing PR body is not empty. Skipping auto-update; use --fill to replace it."
         else
           generate_body_from_commits
           update_body="true"
@@ -1174,9 +1525,12 @@ if [ -n "$pr_number" ]; then
       fi
     fi
 
-    if [ "$update_title" = "true" ] || [ "$update_body" = "true" ] || \
+    if [ "$update_title" = "true" ] || [ "$update_body" = "true" ] || [ "$update_base" = "true" ] || \
        [ ${#edit_label_args[@]} -gt 0 ] || [ ${#edit_reviewer_args[@]} -gt 0 ] || [ ${#edit_assignee_args[@]} -gt 0 ]; then
-      pr_edit_cmd=(gh pr edit "$pr_number")
+      pr_edit_cmd=(gh pr edit "$pr_number" --repo "$github_repo")
+      if [ "$update_base" = "true" ]; then
+        pr_edit_cmd+=(--base "$base_branch")
+      fi
       if [ ${#edit_label_args[@]} -gt 0 ]; then
         pr_edit_cmd+=("${edit_label_args[@]}")
       fi
@@ -1203,54 +1557,20 @@ if [ -n "$pr_number" ]; then
   fi
 
   if [ "$open_web" = "true" ]; then
-    gh pr view "$pr_number" --web
+    gh pr view "$pr_number" --repo "$github_repo" --web
   fi
 
   if [ "$auto_merge" = "true" ]; then
-  case "$merge_method" in
-    merge)
-      merge_flag="--merge"
-      ;;
-    squash)
-      merge_flag="--squash"
-      ;;
-    rebase)
-      merge_flag="--rebase"
-      ;;
-  esac
-
-  merge_cmd=(gh pr merge --auto "$merge_flag" "$pr_number")
-  if [ "$auto_merge_delete_branch" = "true" ]; then
-    merge_cmd+=(--delete-branch)
+    enable_auto_merge "$pr_number"
   fi
-  if [ "$auto_merge_admin" = "true" ]; then
-    merge_cmd+=(--admin)
-  fi
-  if [ -n "$auto_merge_match_head" ]; then
-    merge_cmd+=(--match-head-commit "$auto_merge_match_head")
-  fi
-
-  "${merge_cmd[@]}"
-  log_info "Auto-merge enabled for PR #$pr_number."
-fi
 
   exit 0
 fi
 
-resolve_template_file
-
-if [ -n "$template_file" ] && [ "$template_resolved" != "true" ]; then
-  die "Template file not found: $template_file"
-fi
-
-pr_create_cmd=(gh pr create --base "$base_branch" --head "$current_branch")
+pr_create_cmd=(gh pr create --repo "$github_repo" --base "$base_branch" --head "$current_branch")
 
 if [ "$draft" = "true" ]; then
   pr_create_cmd+=(--draft)
-fi
-
-if [ "$open_web" = "true" ]; then
-  pr_create_cmd+=(--web)
 fi
 
 if [ ${#label_args[@]} -gt 0 ]; then
@@ -1265,10 +1585,6 @@ fi
 
 if [ "$editor" = "true" ]; then
   pr_create_cmd+=(--editor)
-fi
-
-if [ -n "$body_file" ] && [ ! -f "$body_file" ]; then
-  die "Body file not found: $body_file"
 fi
 
 if [ "$use_copilot" = "true" ]; then
@@ -1320,33 +1636,15 @@ fi
 
 "${pr_create_cmd[@]}"
 
-if [ "$auto_merge" = "true" ]; then
-  pr_number=$(gh pr view --json number --jq '.number' 2>/dev/null || true)
+if [ "$auto_merge" = "true" ] || [ "$open_web" = "true" ]; then
+  pr_number=$(get_current_pr_number)
   [ -n "$pr_number" ] || die "Failed to find PR after creation."
+fi
 
-  case "$merge_method" in
-    merge)
-      merge_flag="--merge"
-      ;;
-    squash)
-      merge_flag="--squash"
-      ;;
-    rebase)
-      merge_flag="--rebase"
-      ;;
-  esac
+if [ "$auto_merge" = "true" ]; then
+  enable_auto_merge "$pr_number"
+fi
 
-  merge_cmd=(gh pr merge --auto "$merge_flag" "$pr_number")
-  if [ "$auto_merge_delete_branch" = "true" ]; then
-    merge_cmd+=(--delete-branch)
-  fi
-  if [ "$auto_merge_admin" = "true" ]; then
-    merge_cmd+=(--admin)
-  fi
-  if [ -n "$auto_merge_match_head" ]; then
-    merge_cmd+=(--match-head-commit "$auto_merge_match_head")
-  fi
-
-  "${merge_cmd[@]}"
-  log_info "Auto-merge enabled for PR #$pr_number."
+if [ "$open_web" = "true" ]; then
+  gh pr view "$pr_number" --repo "$github_repo" --web
 fi
