@@ -292,6 +292,25 @@ If the existing body is empty, the default `git pr` flow fills it from commits.
 Use `--no-edit` to avoid title/body edits while still allowing metadata and
 explicit base updates.
 
+## Development
+
+Run the test suite:
+
+```bash
+npx -y bats test
+```
+
+The real Copilot CLI smoke test is opt-in and skipped by default. It performs a
+real Copilot request and may consume account quota and time. To run it, install
+and authenticate `copilot`, then set:
+
+```bash
+GIT_PR_RUN_REAL_COPILOT_SMOKE=1 npx -y bats test/real_copilot_smoke.bats
+```
+
+The smoke test uses `timeout` and defaults to `30s`. Override it with
+`GIT_PR_REAL_COPILOT_SMOKE_TIMEOUT` when needed.
+
 ## License
 
 MIT
