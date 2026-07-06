@@ -236,8 +236,9 @@ Copilot privacy behavior:
 - Debug logs omit prompt, diff, and response content by default. Set
   `GIT_PR_COPILOT_LOG_CONTENT=1` only when you intentionally want to persist
   that content for debugging.
-- Temporary directories must be secured before Copilot runs. Debug logs are
-  skipped when the log directory cannot be made private.
+- Temporary directories must be secured with `chmod 700` before Copilot runs.
+  Debug logs are skipped when the log directory cannot be made private. This
+  privacy hardening depends on the filesystem enforcing POSIX permissions.
 
 Configuration:
 
@@ -258,7 +259,7 @@ Environment variables:
 | `GIT_PR_LANGUAGE` | Default Copilot output language: `en` or `ja`. |
 | `GIT_PR_DIFF_EXCLUDES` | Comma-separated paths excluded from the Copilot diff. |
 | `GIT_PR_COPILOT_DIFF_MAX_BYTES` | Maximum diff bytes sent to Copilot. Default: `20000`. |
-| `GIT_PR_COPILOT_LOG_DIR` | Directory for Copilot debug logs. Default: `${XDG_STATE_HOME:-$HOME/.local/state}/git-pr/copilot-logs`. Logs are skipped if the directory cannot be made private. |
+| `GIT_PR_COPILOT_LOG_DIR` | Directory for Copilot debug logs. Default: `${XDG_STATE_HOME:-$HOME/.local/state}/git-pr/copilot-logs`. Logs are skipped if the directory cannot be secured with `chmod 700`. |
 | `GIT_PR_COPILOT_LOG` | Set to a non-empty value to keep Copilot debug logs on success. |
 | `GIT_PR_COPILOT_LOG_CONTENT` | Set to a non-empty value to persist prompt, diff, and response content in Copilot debug logs. |
 | `GIT_PR_UPDATE_URL` | Override the update URL used by `git pr update`. |

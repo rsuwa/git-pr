@@ -9,8 +9,9 @@
   `git pr merge` alias, and clarify that GitHub CLI may merge or enqueue when
   auto-merge requirements are already met.
 - Validate explicit existing-PR base retargets against `origin` before pushing.
-- Refuse Copilot prompt generation when temporary files cannot be secured, and
-  skip Copilot debug logs when the log directory cannot be made private.
+- Refuse Copilot prompt generation before pushing when temporary files cannot
+  be secured, and skip Copilot debug logs when the log directory cannot be made
+  private.
 
 ## 0.2.0 - 2026-07-06
 

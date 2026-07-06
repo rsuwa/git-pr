@@ -250,6 +250,7 @@ FAKE_CHMOD
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: GIT_PR_COPILOT_DIFF_MAX_BYTES must be an integer."* ]]
+  assert_no_git_push
   assert_no_command_logged "copilot"
   assert_log_not_contains "gh pr create"
 }
@@ -298,15 +299,20 @@ FAKE_CHMOD
 @test "copilot refuses to build prompt when temporary directory cannot be secured" {
   create_fake_copilot
   create_selective_chmod
+  tmp_root="$BATS_TEST_TMPDIR/private-tmp"
+  mkdir -p "$tmp_root"
 
   run env \
+    TMPDIR="$tmp_root" \
     GIT_PR_FAKE_CHMOD_FAIL_PRIVATE=true \
     "$BATS_TEST_DIRNAME/../git-pr" copilot
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: Failed to secure temporary directory:"* ]]
+  assert_no_git_push
   assert_no_command_logged "copilot"
   assert_log_not_contains "gh pr create"
+  [ -z "$(find "$tmp_root" -mindepth 1 -maxdepth 1 -name 'git-pr.*' -print -quit)" ]
 }
 
 @test "copilot debug log is skipped when log directory cannot be secured" {
@@ -324,4 +330,24 @@ FAKE_CHMOD
   [[ "$output" == *"WARN: Skipping Copilot debug log because directory could not be secured: $log_dir"* ]]
   [ -z "$(find "$log_dir" -type f -print -quit 2>/dev/null)" ]
   assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill"
+}
+
+@test "copilot update skips insecure debug log and preserves existing body" {
+  create_malformed_copilot
+  create_selective_chmod
+  log_dir="$BATS_TEST_TMPDIR/copilot-logs"
+
+  run env \
+    GIT_PR_COPILOT_LOG_DIR="$log_dir" \
+    GIT_PR_COPILOT_LOG_CONTENT=1 \
+    GIT_PR_FAKE_CHMOD_FAIL_PATH="$log_dir" \
+    GIT_PR_FAKE_PR_NUMBER=123 \
+    GIT_PR_FAKE_PR_BODY="Already written" \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=update
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Skipping Copilot debug log because directory could not be secured: $log_dir"* ]]
+  [[ "$output" == *"WARN: Copilot failed; leaving existing PR title/body unchanged."* ]]
+  [ -z "$(find "$log_dir" -type f -print -quit 2>/dev/null)" ]
+  assert_log_not_contains "gh pr edit 123"
 }
