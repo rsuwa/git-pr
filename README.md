@@ -30,6 +30,9 @@ curl -fsSL https://github.com/rsuwa/git-pr/releases/latest/download/install.sh |
 The installer places `git-pr` in `~/.local/bin`. Make sure that directory is in
 your `PATH`. By default, the installer also downloads `SHA256SUMS` from the same
 release and verifies the downloaded `git-pr` before installing it.
+The `latest` URL follows whichever GitHub Release is currently marked latest.
+For a reproducible install, replace `latest` with a pinned tag such as
+`v0.2.0` in both the `install.sh` and asset URLs.
 
 Pin a downloaded payload by SHA256 instead of downloading `SHA256SUMS`:
 
@@ -150,11 +153,37 @@ Update `git-pr` from the latest GitHub release:
 git pr update
 ```
 
+`git pr update` downloads the `git-pr` asset and verifies it with the release
+`SHA256SUMS` by default. It refuses symlink and directory targets and replaces
+the executable only after checksum and Bash syntax validation pass.
+
 Print the installed version:
 
 ```bash
 git pr --version
 ```
+
+## Release Assets
+
+Each GitHub Release used by `install.sh` and `git pr update` must publish these
+assets:
+
+- `git-pr`
+- `install.sh`
+- `SHA256SUMS`
+
+`SHA256SUMS` must include entries for at least `git-pr` and `install.sh`.
+The current `v0.2.0` release is published with all three assets.
+
+Verify a release before using it:
+
+```bash
+gh release view v0.2.0 --json tagName,isDraft,isPrerelease,assets
+curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.2.0/SHA256SUMS
+```
+
+Release publishing is expected to run the test suite, generate checksums, smoke
+test local release-style install/update flows, and only then upload the assets.
 
 ## Remote model
 
