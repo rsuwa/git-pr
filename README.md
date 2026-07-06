@@ -309,8 +309,14 @@ branch exists on `origin` before pushing the current branch.
 Run the test suite:
 
 ```bash
+bash -n git-pr install.sh test/test_helper.bash
+shellcheck git-pr install.sh test/test_helper.bash test/*.bats
 npx -y bats test
 ```
+
+CI runs these checks on Linux and macOS. It also exercises release-style
+`install.sh` and `git pr update` flows against local `file://` assets with
+`SHA256SUMS`.
 
 The real Copilot CLI smoke test is opt-in and skipped by default. It performs a
 real Copilot request and may consume account quota and time. To run it, install

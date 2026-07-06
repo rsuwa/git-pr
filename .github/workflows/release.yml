@@ -23,11 +23,36 @@ jobs:
           bash -n install.sh
           bash -n test/test_helper.bash
       - name: ShellCheck
-        run: shellcheck git-pr install.sh test/test_helper.bash
+        run: shellcheck git-pr install.sh test/test_helper.bash test/*.bats
       - name: Tests
         run: bats test
       - name: Checksums
-        run: sha256sum git-pr install.sh > SHA256SUMS
+        run: |
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum git-pr install.sh > SHA256SUMS
+          else
+            shasum -a 256 git-pr install.sh > SHA256SUMS
+          fi
+      - name: Release asset smoke
+        run: |
+          release_dir="$RUNNER_TEMP/git-pr-release"
+          install_dir="$RUNNER_TEMP/git-pr-install"
+          update_dir="$RUNNER_TEMP/git-pr-update"
+          mkdir -p "$release_dir" "$install_dir" "$update_dir"
+          cp git-pr install.sh SHA256SUMS "$release_dir/"
+          GIT_PR_INSTALL_URL="file://$release_dir/git-pr" \
+            GIT_PR_CHECKSUM_URL="file://$release_dir/SHA256SUMS" \
+            GIT_PR_INSTALL_DIR="$install_dir" \
+            bash install.sh
+          "$install_dir/git-pr" --version
+
+          cp git-pr "$update_dir/git-pr"
+          chmod 755 "$update_dir/git-pr"
+          GIT_PR_UPDATE_URL="file://$release_dir/git-pr" \
+            GIT_PR_UPDATE_CHECKSUM_URL="file://$release_dir/SHA256SUMS" \
+            GIT_PR_UPDATE_INSTALL_PATH="$update_dir/git-pr" \
+            "$update_dir/git-pr" update
+          "$update_dir/git-pr" --version
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}

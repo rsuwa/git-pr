@@ -12,6 +12,8 @@
 - Refuse Copilot prompt generation before pushing when temporary files cannot
   be secured, and skip Copilot debug logs when the log directory cannot be made
   private.
+- Run CI on Linux and macOS, shellcheck Bats files, and smoke-test release-style
+  install/update assets before publishing releases.
 
 ## 0.2.0 - 2026-07-06
 
