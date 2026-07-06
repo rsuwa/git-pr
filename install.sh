@@ -26,6 +26,42 @@ default_checksum_url() {
   esac
 }
 
+redact_url() {
+  local url="$1"
+  local redacted="$url"
+  local scheme
+  local rest
+  local authority
+  local path
+
+  case "$redacted" in
+    *'#'*)
+      redacted="${redacted%%#*}#REDACTED"
+      ;;
+  esac
+  case "$redacted" in
+    *'?'*)
+      redacted="${redacted%%\?*}?REDACTED"
+      ;;
+  esac
+  case "$redacted" in
+    *://*@*)
+      scheme="${redacted%%://*}"
+      rest="${redacted#*://}"
+      authority="${rest%%/*}"
+      path="${rest#*/}"
+      authority="${authority#*@}"
+      if [ "$path" != "$rest" ]; then
+        redacted="$scheme://REDACTED@$authority/$path"
+      else
+        redacted="$scheme://REDACTED@$authority"
+      fi
+      ;;
+  esac
+
+  printf '%s' "$redacted"
+}
+
 download_file() {
   local url="$1"
   local output="$2"
@@ -98,6 +134,14 @@ verify_direct_checksum() {
   [ "$actual" = "$expected" ]
 }
 
+ensure_install_target_is_regular_executable() {
+  local target="$1"
+
+  if [ -L "$target" ] || [ -d "$target" ] || [ ! -f "$target" ] || [ ! -x "$target" ]; then
+    die "Installed git-pr target is not a regular executable file: $target"
+  fi
+}
+
 if [ -z "$checksum_url" ] && [ -z "$expected_sha256_value" ]; then
   checksum_url=$(default_checksum_url "$install_url")
 fi
@@ -121,7 +165,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-download_file "$install_url" "$temp_file" || die "Failed to download git-pr from $install_url"
+download_file "$install_url" "$temp_file" || die "Failed to download git-pr from $(redact_url "$install_url")"
 
 if [ -n "$expected_sha256_value" ]; then
   if ! verify_direct_checksum "$temp_file" "$expected_sha256_value"; then
@@ -129,7 +173,7 @@ if [ -n "$expected_sha256_value" ]; then
   fi
 else
   checksum_file=$(mktemp "$install_dir/.git-pr.SHA256SUMS.XXXXXX") || die "Failed to create checksum temporary file in $install_dir"
-  download_file "$checksum_url" "$checksum_file" || die "Failed to download SHA256SUMS from $checksum_url"
+  download_file "$checksum_url" "$checksum_file" || die "Failed to download SHA256SUMS from $(redact_url "$checksum_url")"
 
   if ! verify_checksum "$temp_file" "$checksum_file"; then
     die "SHA256 verification failed for git-pr"
@@ -148,6 +192,7 @@ if [ -d "$install_path" ]; then
 fi
 
 mv -f "$temp_file" "$install_path" || die "Failed to install git-pr to $install_path"
+ensure_install_target_is_regular_executable "$install_path"
 
 echo "Installed git-pr to $install_path"
 echo "Make sure $install_dir is in PATH."

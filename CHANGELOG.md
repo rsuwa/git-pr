@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Redact credentials and query strings in more install/update/remote failure
+  messages, and let `git pr update` target the invoked executable or an
+  explicit `GIT_PR_UPDATE_INSTALL_PATH`.
+
 ## 0.2.0 - 2026-07-06
 
 - Add `git pr --version`.

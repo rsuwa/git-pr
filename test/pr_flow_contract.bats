@@ -74,6 +74,30 @@ setup() {
   assert_log_not_contains "token@github.com"
 }
 
+@test "credentialed HTTPS origin strips query and fragment before repo use" {
+  export GIT_PR_FAKE_ORIGIN_URL="https://user:secret@github.com/example/repo.git?token=abc#frag"
+
+  run "$GIT_PR"
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--fill"
+  assert_log_not_contains "secret"
+  assert_log_not_contains "token=abc"
+}
+
+@test "unsupported credentialed HTTPS origin redacts credentials and query" {
+  export GIT_PR_FAKE_ORIGIN_URL="https://user:secret@example.invalid/org/repo/extra.git?token=abc#frag"
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Remote 'origin' is not a supported GitHub repository URL: https://REDACTED@example.invalid/org/repo/extra.git?REDACTED"* ]]
+  [[ "$output" != *"secret"* ]]
+  [[ "$output" != *"token=abc"* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
 @test "GitHub Enterprise origin uses hostname for auth and repo" {
   export GIT_PR_FAKE_ORIGIN_URL="git@ghe.example.com:octo/repo.git"
   export GIT_PR_FAKE_REPO="ghe.example.com/octo/repo"

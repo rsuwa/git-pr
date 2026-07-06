@@ -261,6 +261,7 @@ Environment variables:
 | `GIT_PR_UPDATE_URL` | Override the update URL used by `git pr update`. |
 | `GIT_PR_UPDATE_CHECKSUM_URL` | Override the `SHA256SUMS` URL used by `git pr update`. |
 | `GIT_PR_UPDATE_SHA256` | Expected SHA256 for the file downloaded by `git pr update`; skips `SHA256SUMS` download when set. |
+| `GIT_PR_UPDATE_INSTALL_PATH` | Override the executable path replaced by `git pr update`. |
 
 SHA256 checks use `sha256sum` when available, then `shasum -a 256`.
 `git pr update` reports the update URL, checksum source, and install target
