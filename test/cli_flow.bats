@@ -188,7 +188,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT diff --quiet origin/main...HEAD -- ."
-  assert_log_contains "copilot -s --no-custom-instructions --stream off -p @"
+  assert_log_contains "copilot -s --no-custom-instructions -p @"
   assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Generated\\ title --body Generated\\ body"
 }
 

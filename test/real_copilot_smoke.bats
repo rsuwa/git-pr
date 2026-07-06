@@ -24,9 +24,8 @@ setup() {
   run timeout "${GIT_PR_REAL_COPILOT_SMOKE_TIMEOUT:-30s}" copilot \
     -s \
     --no-custom-instructions \
-    --stream off \
     -p "@$prompt_file"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$sentinel"* ]]
+  [ "$output" = "$sentinel" ]
 }
