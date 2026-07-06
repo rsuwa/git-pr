@@ -41,19 +41,28 @@ curl -fsSL https://github.com/rsuwa/git-pr/releases/latest/download/install.sh |
 Manual install:
 
 ```bash
+set -e
 mkdir -p ~/.local/bin
 tmp_file=$(mktemp)
 tmp_sums=$(mktemp)
+cleanup() {
+  rm -f "$tmp_file" "$tmp_sums"
+}
+trap cleanup EXIT
 curl -fsSL https://github.com/rsuwa/git-pr/releases/latest/download/git-pr \
   -o "$tmp_file"
 curl -fsSL https://github.com/rsuwa/git-pr/releases/latest/download/SHA256SUMS \
   -o "$tmp_sums"
 expected=$(awk '$2 == "git-pr" { print $1 }' "$tmp_sums")
-actual=$(sha256sum "$tmp_file" | awk '{ print $1 }')
+if command -v sha256sum >/dev/null 2>&1; then
+  actual=$(sha256sum "$tmp_file" | awk '{ print $1 }')
+else
+  actual=$(shasum -a 256 "$tmp_file" | awk '{ print $1 }')
+fi
 [ "$actual" = "$expected" ]
+bash -n "$tmp_file"
 chmod 755 "$tmp_file"
 mv "$tmp_file" ~/.local/bin/git-pr
-rm -f "$tmp_sums"
 ```
 
 ## Usage
@@ -151,8 +160,8 @@ not supported.
 | `-t, --title <title>` | Pull request title. |
 | `-d, --body <body>` | Pull request body. |
 | `-F, --body-file <path>` | Pull request body file. |
-| `-T, --template <path>` | Pull request template file. |
-| `-e, --editor` | Open an editor while creating a pull request. |
+| `-T, --template <path>` | Pull request template file. Create only. |
+| `-e, --editor` | Open an editor while creating a pull request. Create only. |
 | `--label <label>` | Add labels. Repeatable and comma-separated values are supported. |
 | `--reviewer <user>` | Add reviewers. Repeatable and comma-separated values are supported. |
 | `--assignee <user>` | Add assignees. Repeatable and comma-separated values are supported. |

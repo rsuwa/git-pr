@@ -19,7 +19,8 @@ jobs:
         run: |
           bash -n git-pr
           bash -n install.sh
+          bash -n test/test_helper.bash
       - name: ShellCheck
-        run: shellcheck git-pr install.sh
+        run: shellcheck git-pr install.sh test/test_helper.bash
       - name: Tests
         run: bats test
