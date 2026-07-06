@@ -258,6 +258,10 @@ OLD
     "$GIT_PR_TEST_BIN/git-pr" update
 
   [ "$status" -eq 0 ]
+  update_output="$output"
+  [[ "$update_output" == *"INFO: Update URL: https://example.invalid/releases/latest/download/git-pr"* ]]
+  [[ "$update_output" == *"INFO: Checksum URL: https://example.invalid/releases/latest/download/SHA256SUMS"* ]]
+  [[ "$update_output" == *"INFO: Install target: $GIT_PR_TEST_BIN/git-pr"* ]]
   run "$GIT_PR_TEST_BIN/git-pr"
   [ "$output" = "downloaded git-pr" ]
   grep -F "curl https://example.invalid/releases/latest/download/git-pr" "$curl_log"
@@ -278,10 +282,31 @@ OLD
     "$GIT_PR_TEST_BIN/git-pr" update
 
   [ "$status" -eq 0 ]
+  update_output="$output"
+  [[ "$update_output" == *"INFO: Update URL: https://example.invalid/git-pr"* ]]
+  [[ "$update_output" == *"INFO: Checksum source: GIT_PR_UPDATE_SHA256"* ]]
+  [[ "$update_output" == *"INFO: Install target: $GIT_PR_TEST_BIN/git-pr"* ]]
   run "$GIT_PR_TEST_BIN/git-pr"
   [ "$output" = "downloaded git-pr" ]
   grep -F "curl https://example.invalid/git-pr" "$curl_log"
   ! grep -F "SHA256SUMS" "$curl_log"
+}
+
+@test "update redacts credentials and query strings in logs" {
+  cp "$BATS_TEST_DIRNAME/../git-pr" "$GIT_PR_TEST_BIN/git-pr"
+  chmod 755 "$GIT_PR_TEST_BIN/git-pr"
+  expected="$(sha256_of "$GIT_PR_TEST_DOWNLOAD")"
+
+  run env \
+    -u GIT_PR_UPDATE_CHECKSUM_URL \
+    GIT_PR_UPDATE_URL="https://user:secret@example.invalid/git-pr?token=abc#frag" \
+    GIT_PR_UPDATE_SHA256="$expected" \
+    "$GIT_PR_TEST_BIN/git-pr" update
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"INFO: Update URL: https://REDACTED@example.invalid/git-pr?REDACTED"* ]]
+  [[ "$output" != *"secret"* ]]
+  [[ "$output" != *"token=abc"* ]]
 }
 
 @test "update checksum mismatch preserves existing executable" {
@@ -386,11 +411,13 @@ OLD
   run env \
     -u GIT_PR_UPDATE_SHA256 \
     -u GIT_PR_UPDATE_CHECKSUM_URL \
-    GIT_PR_UPDATE_URL="https://example.invalid/releases/latest/download/git-pr" \
+    GIT_PR_UPDATE_URL="https://user:secret@example.invalid/releases/latest/download/git-pr?token=abc" \
     "$GIT_PR_TEST_BIN/git-pr" update
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ERROR: Failed to download git-pr from https://example.invalid/releases/latest/download/git-pr"* ]]
+  [[ "$output" == *"ERROR: Failed to download git-pr from https://REDACTED@example.invalid/releases/latest/download/git-pr?REDACTED"* ]]
+  [[ "$output" != *"secret"* ]]
+  [[ "$output" != *"token=abc"* ]]
   run "$GIT_PR_TEST_BIN/git-pr" --version
   [[ "$output" == git-pr\ * ]]
 }

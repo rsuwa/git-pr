@@ -16,33 +16,33 @@ Usage: git pr [create] [options]
        git pr copilot [options]
        git pr update
 
-Creates a PR for the current branch and optionally enables auto-merge.
+Pushes the current branch, then creates or updates a GitHub pull request.
 
 Options:
-  -b, --base <branch>      Base branch (default: gh-merge-base or repo default)
+  -b, --base <branch>      Base branch (default: gh-merge-base, repo default, origin/HEAD)
   -t, --title <title>      PR title (disables --fill)
   -d, --body <body>        PR body (disables --fill)
-  -F, --body-file <path>   PR body from file (disables --fill)
+  -F, --body-file <path|-> PR body from file or stdin (disables --fill)
   -e, --editor             Open editor to edit title/body (create only)
-  -T, --template <path>    Template file to use as PR body (create only)
+  -T, --template <path>    Starting PR body template for gh (create only)
   --label <label>          Add label(s) (repeatable, comma-separated ok)
   --reviewer <user>        Add reviewer(s) (repeatable, comma-separated ok)
   --assignee <user>        Add assignee(s) (repeatable, comma-separated ok)
-  --copilot                (deprecated) Use Copilot to generate title/body
+  --copilot                (deprecated) Copilot create mode for new PRs
   --copilot-verbose        (deprecated) More detailed Copilot output
-  --copilot-update         (deprecated) Respect existing PR body and fill missing parts
+  --copilot-update         (deprecated) Update managed Copilot section
   --mode <m>               Copilot mode (copilot only): create|update|auto (default: auto)
   --detail <d>             Copilot detail (copilot only): normal|verbose (default: normal)
   --language <lang>        Copilot output language: en|ja (default: env/config or en)
   --diff-exclude <path>    Exclude path from Copilot diff (repeatable)
-  --fill                   Auto-fill title/body from commits (default)
-  --fill-first             Auto-fill title/body from first commit
-  --fill-verbose           Auto-fill title/body using commit message+body
-  --no-fill                Do not auto-fill; generate if missing
-  --no-edit                Do not edit existing PR title/body
+  --fill                   Create: gh fill; existing PR: replace body from commits
+  --fill-first             Create: gh fill-first; existing PR: replace from first commit
+  --fill-verbose           Create: gh fill-verbose; existing PR: replace verbose body
+  --no-fill                Create: generate missing local body; existing PR: no implicit body update
+  --no-edit                Do not edit existing PR title/body; metadata/base may update
   -a, --enable-auto-merge  Enable auto-merge after checks pass (for create/update)
   --auto-merge             (deprecated) Alias for --enable-auto-merge
-  -m, --merge-method <m>   merge|squash|rebase (default: merge)
+  -m, --merge-method <m>   merge|squash|rebase (auto-merge only; default: merge)
   --delete-branch          Delete branch after auto-merge (auto-merge only)
   --admin                  Use admin privileges for auto-merge (auto-merge only)
   --match-head-commit <s>  Require head SHA to match for auto-merge
@@ -690,6 +690,65 @@ append_pr_edit_content_args() {
   fi
 }
 
+join_summary_parts() {
+  local part
+  local joined=""
+
+  for part in "$@"; do
+    if [ -n "$joined" ]; then
+      joined+=", "
+    fi
+    joined+="$part"
+  done
+  printf '%s' "$joined"
+}
+
+pr_edit_update_summary() {
+  local include_base="$1"
+  local include_title="$2"
+  local include_body="$3"
+  local -a parts=()
+
+  if [ "$include_base" = "true" ]; then
+    parts+=("base")
+  fi
+  if [ "$include_title" = "true" ]; then
+    parts+=("title")
+  fi
+  if [ "$include_body" = "true" ]; then
+    if [ "$use_copilot" = "true" ] && [ "$copilot_update_effective" = "true" ]; then
+      parts+=("copilot section")
+    elif [ "$body_file_explicit" = "true" ]; then
+      parts+=("body file")
+    else
+      parts+=("body")
+    fi
+  fi
+  if [ ${#edit_label_args[@]} -gt 0 ]; then
+    parts+=("labels")
+  fi
+  if [ ${#edit_reviewer_args[@]} -gt 0 ]; then
+    parts+=("reviewers")
+  fi
+  if [ ${#edit_assignee_args[@]} -gt 0 ]; then
+    parts+=("assignees")
+  fi
+
+  join_summary_parts "${parts[@]}"
+}
+
+log_pr_edit_summary() {
+  local include_base="$1"
+  local include_title="${2:-false}"
+  local include_body="${3:-false}"
+  local summary
+
+  summary=$(pr_edit_update_summary "$include_base" "$include_title" "$include_body")
+  if [ -n "$summary" ]; then
+    log_info "Updated PR #$pr_number: $summary."
+  fi
+}
+
 build_pr_edit_cmd() {
   local include_base="$1"
   local include_title="${2:-false}"
@@ -1051,6 +1110,42 @@ default_update_checksum_url() {
   esac
 }
 
+redact_url() {
+  local url="$1"
+  local redacted="$url"
+  local scheme
+  local rest
+  local authority
+  local path
+
+  case "$redacted" in
+    *'#'*)
+      redacted="${redacted%%#*}#REDACTED"
+      ;;
+  esac
+  case "$redacted" in
+    *'?'*)
+      redacted="${redacted%%\?*}?REDACTED"
+      ;;
+  esac
+  case "$redacted" in
+    *://*@*)
+      scheme="${redacted%%://*}"
+      rest="${redacted#*://}"
+      authority="${rest%%/*}"
+      path="${rest#*/}"
+      authority="${authority#*@}"
+      if [ "$path" != "$rest" ]; then
+        redacted="$scheme://REDACTED@$authority/$path"
+      else
+        redacted="$scheme://REDACTED@$authority"
+      fi
+      ;;
+  esac
+
+  printf '%s' "$redacted"
+}
+
 download_update_file() {
   local url="$1"
   local output="$2"
@@ -1166,7 +1261,7 @@ verify_downloaded_update() {
     return $?
   fi
 
-  download_update_file "$checksum_url" "$checksum_file" || die "Failed to download SHA256SUMS from $checksum_url"
+  download_update_file "$checksum_url" "$checksum_file" || die "Failed to download SHA256SUMS from $(redact_url "$checksum_url")"
   verify_update_checksum "$temp_file" "$checksum_file"
 }
 
@@ -1200,13 +1295,21 @@ update_self() {
 
   require_sha256_tool
 
+  log_info "Update URL: $(redact_url "$update_url")"
+  if [ -n "$expected_sha256_value" ]; then
+    log_info "Checksum source: GIT_PR_UPDATE_SHA256"
+  else
+    log_info "Checksum URL: $(redact_url "$checksum_url")"
+  fi
+  log_info "Install target: $install_path"
+
   temp_file=$(mktemp "$install_dir/.git-pr.XXXXXX") || die "Failed to create temporary file in $install_dir"
   register_cleanup_path "$temp_file"
   checksum_file=""
 
   download_update_file "$update_url" "$temp_file" || {
     cleanup_update_files "$temp_file" "$checksum_file"
-    die "Failed to download git-pr from $update_url"
+    die "Failed to download git-pr from $(redact_url "$update_url")"
   }
 
   if [ -z "$expected_sha256_value" ]; then
@@ -1981,6 +2084,7 @@ if [ -n "$pr_number" ]; then
     if has_pr_edit_metadata_updates; then
       build_pr_edit_cmd "$base_branch_explicit"
       "${pr_edit_cmd[@]}"
+      log_pr_edit_summary "$base_branch_explicit"
     fi
   else
     update_title="false"
@@ -2045,6 +2149,9 @@ if [ -n "$pr_number" ]; then
         elif [ "$commit_count" -eq 0 ]; then
           log_info "No new commits compared to $base_branch. Skipping auto-update."
         else
+          if [ "$fill_explicit" = "true" ]; then
+            log_info "Replacing existing PR body because a fill option was specified."
+          fi
           generate_body_from_commits
           update_body="true"
         fi
@@ -2054,6 +2161,7 @@ if [ -n "$pr_number" ]; then
     if has_pr_edit_updates "$update_title" "$update_body" "$update_base"; then
       build_pr_edit_cmd "$update_base" "$update_title" "$update_body"
       "${pr_edit_cmd[@]}"
+      log_pr_edit_summary "$update_base" "$update_title" "$update_body"
     else
       log_info "No PR fields to update."
     fi

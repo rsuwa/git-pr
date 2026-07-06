@@ -67,11 +67,22 @@ mv "$tmp_file" ~/.local/bin/git-pr
 
 ## Usage
 
-Create or update a pull request for the current branch:
+Push the current branch, then create or update a pull request for it:
 
 ```bash
 git pr
 ```
+
+Behavior summary:
+
+| Situation | What happens |
+| --- | --- |
+| No PR exists | `git-pr` resolves the base branch, fetches it, pushes the current branch, then creates a PR. |
+| PR exists | `git-pr` pushes the current branch and updates only the fields requested by options. |
+| PR exists and no title/body option is given | A non-empty body is kept. An empty body is filled from commits. |
+| `--no-edit` on an existing PR | Title/body are not edited. Metadata and explicit `--base` may still update the PR. |
+| Explicit `--fill`, `--fill-first`, or `--fill-verbose` on an existing PR | The existing body is replaced with commit-derived content. |
+| `git pr copilot --mode=update` | Existing body is kept; generated content is appended inside a `git-pr` managed marker block. |
 
 Create or update a pull request and enable auto-merge:
 
@@ -149,30 +160,41 @@ git pr --version
 
 `git-pr` only works with a Git remote named `origin`. It checks for `origin`,
 uses the GitHub repository default branch when resolving the default base, and
-pushes new branches with `git push -u origin HEAD`. Selecting another remote is
-not supported.
+pushes new branches with `git push -u origin HEAD`. Existing upstreams must be
+`origin/<current-branch>`. Selecting another remote is not supported.
+
+Default base branch resolution order is:
+
+1. explicit `--base`
+2. `branch.<name>.gh-merge-base`
+3. GitHub repository default branch
+4. local `origin/HEAD`
+
+When local commit ranges or Copilot diffs are generated, `git-pr` fetches the
+selected base from `origin` first. Existing PR metadata-only updates do not need
+a local base ref.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
-| `-b, --base <branch>` | Base branch. Defaults to `branch.<name>.gh-merge-base`, then the repository default branch. |
+| `-b, --base <branch>` | Base branch. Defaults to `branch.<name>.gh-merge-base`, then the repository default branch, then local `origin/HEAD`. |
 | `-t, --title <title>` | Pull request title. |
 | `-d, --body <body>` | Pull request body. |
-| `-F, --body-file <path>` | Pull request body file. |
-| `-T, --template <path>` | Pull request template file. Create only. |
+| `-F, --body-file <path\|->` | Pull request body file, or `-` to let `gh` read stdin. |
+| `-T, --template <path>` | Starting body template passed to `gh pr create`. Create only. |
 | `-e, --editor` | Open an editor while creating a pull request. Create only. |
 | `--label <label>` | Add labels. Repeatable and comma-separated values are supported. |
 | `--reviewer <user>` | Add reviewers. Repeatable and comma-separated values are supported. |
 | `--assignee <user>` | Add assignees. Repeatable and comma-separated values are supported. |
 | `--fill`, `--fill-first`, `--fill-verbose` | Use GitHub CLI fill behavior when creating a pull request. On existing PRs, explicitly replace the body with locally generated commit content. |
 | `--no-fill` | Do not pass a GitHub CLI fill flag. On create, missing title/body are generated locally from commits; on existing PRs, no title/body update is made unless explicit content is provided. |
-| `--no-edit` | Push only; do not update an existing pull request title or body. |
+| `--no-edit` | Do not update an existing pull request title or body. Metadata and explicit `--base` may still update the PR. |
 | `-a, --enable-auto-merge` | Enable auto-merge after creating or updating a pull request. |
-| `-m, --merge-method <method>` | Auto-merge method: `merge`, `squash`, or `rebase`. |
-| `--delete-branch` | Delete the branch after auto-merge. |
-| `--admin` | Pass `--admin` to `gh pr merge` for auto-merge. |
-| `--match-head-commit <sha>` | Require the pull request head commit to match the given SHA when enabling auto-merge. If omitted, `git-pr` uses the local `HEAD` SHA. |
+| `-m, --merge-method <method>` | Auto-merge method: `merge`, `squash`, or `rebase`. Requires `--enable-auto-merge` or `git pr auto-merge`. |
+| `--delete-branch` | Delete the branch after auto-merge. Requires `--enable-auto-merge` or `git pr auto-merge`. |
+| `--admin` | Pass `--admin` to `gh pr merge` for auto-merge. Requires `--enable-auto-merge` or `git pr auto-merge`. |
+| `--match-head-commit <sha>` | Require the pull request head commit to match the given SHA when enabling auto-merge. If omitted, `git-pr` uses the local `HEAD` SHA. Requires `--enable-auto-merge` or `git pr auto-merge`. |
 | `--disable-auto-merge` | Disable auto-merge on the current PR. Only valid with `git pr auto-merge`. |
 | `--draft` | Create the pull request as a draft. |
 | `-w, --web` | Open the pull request in a browser. |
@@ -190,12 +212,19 @@ Copilot options:
 
 | Option | Description |
 | --- | --- |
-| `--mode <create\|update\|auto>` | `create` generates a new title/body, `update` preserves an existing body and fills missing details, and `auto` chooses based on whether a pull request exists. |
+| `--mode <create\|update\|auto>` | `create` generates a new title/body for a new PR, `update` preserves an existing body and appends generated content inside a managed marker block, and `auto` chooses based on whether a pull request exists. |
 | `--detail <normal\|verbose>` | Controls the generated body detail level. |
 | `--language <en\|ja>` | Output language. Defaults to `GIT_PR_LANGUAGE`, then `git-pr.language`, then `en`. |
 | `--diff-exclude <path>` | Exclude a path from the diff sent to Copilot. Repeatable. |
 
 Copilot privacy behavior:
+
+- Update mode uses these markers in the PR body:
+  `<!-- git-pr:copilot-update:start -->` and
+  `<!-- git-pr:copilot-update:end -->`. Manual content outside the block is
+  preserved. If the marker block is malformed, `git-pr` refuses to edit the PR.
+- Update mode includes the current PR title and body in the prompt sent to
+  Copilot so it can avoid duplicate generated content.
 
 - `git-pr` writes temporary prompt, diff, title, and body files in a private
   temp directory outside the repository and removes them when the process exits.
@@ -234,6 +263,9 @@ Environment variables:
 | `GIT_PR_UPDATE_SHA256` | Expected SHA256 for the file downloaded by `git pr update`; skips `SHA256SUMS` download when set. |
 
 SHA256 checks use `sha256sum` when available, then `shasum -a 256`.
+`git pr update` reports the update URL, checksum source, and install target
+before downloading. URL userinfo, query strings, and fragments are redacted in
+these status messages.
 
 ## Deprecated aliases
 
@@ -252,11 +284,13 @@ future release:
 
 When a pull request already exists for the current branch, `git pr` pushes the
 branch and updates metadata requested by options. The title is kept unless
-`--title` is provided. The body is kept when it is non-empty unless `--fill`,
-`--body`, `--body-file`, or `git pr copilot` is explicitly used. If the existing
-body is empty, the default `git pr` flow fills it from commits.
+`--title` is provided. The body is kept when it is non-empty unless a fill
+option, `--body`, `--body-file`, or `git pr copilot --mode=update` is
+explicitly used.
+If the existing body is empty, the default `git pr` flow fills it from commits.
 
-Use `--no-edit` to push without editing the pull request.
+Use `--no-edit` to avoid title/body edits while still allowing metadata and
+explicit base updates.
 
 ## License
 
