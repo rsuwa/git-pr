@@ -6,7 +6,7 @@ request flow from a terminal:
 - push the current branch
 - create a pull request when one does not exist
 - update an existing pull request when one already exists
-- optionally enable GitHub auto-merge
+- merge the current pull request immediately or enable GitHub auto-merge
 
 After installation, run it as:
 
@@ -35,10 +35,10 @@ For a reproducible install, pin both the downloaded installer and the payload
 URLs:
 
 ```bash
-curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.2.1/install.sh |
+curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.0/install.sh |
   env \
-    GIT_PR_INSTALL_URL="https://github.com/rsuwa/git-pr/releases/download/v0.2.1/git-pr" \
-    GIT_PR_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.2.1/SHA256SUMS" \
+    GIT_PR_INSTALL_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.0/git-pr" \
+    GIT_PR_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.0/SHA256SUMS" \
     bash
 ```
 
@@ -149,6 +149,12 @@ Enable auto-merge for the existing pull request on the current branch:
 git pr auto-merge
 ```
 
+Merge the existing pull request on the current branch immediately:
+
+```bash
+git pr merge
+```
+
 Disable auto-merge:
 
 ```bash
@@ -167,8 +173,8 @@ the executable only after checksum and Bash syntax validation pass.
 To update from a pinned release instead of `latest`:
 
 ```bash
-GIT_PR_UPDATE_URL="https://github.com/rsuwa/git-pr/releases/download/v0.2.1/git-pr" \
-GIT_PR_UPDATE_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.2.1/SHA256SUMS" \
+GIT_PR_UPDATE_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.0/git-pr" \
+GIT_PR_UPDATE_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.0/SHA256SUMS" \
   git pr update
 ```
 
@@ -188,13 +194,13 @@ assets:
 - `SHA256SUMS`
 
 `SHA256SUMS` must include entries for at least `git-pr` and `install.sh`.
-The current `v0.2.1` release is published with all three assets.
+The current `v0.3.0` release is published with all three assets.
 
 Verify a release before using it:
 
 ```bash
-gh release view v0.2.1 --json tagName,isDraft,isPrerelease,assets
-curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.2.1/SHA256SUMS
+gh release view v0.3.0 --json tagName,isDraft,isPrerelease,assets
+curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.0/SHA256SUMS
 ```
 
 Release publishing is expected to run the test suite, generate checksums, smoke
@@ -236,10 +242,10 @@ against `origin` before pushing.
 | `--no-fill` | Do not pass a GitHub CLI fill flag. On create, missing title/body are generated locally from commits; on existing PRs, no title/body update is made unless explicit content is provided. |
 | `--no-edit` | Do not update an existing pull request title or body. Metadata and explicit `--base` may still update the PR. |
 | `-a, --enable-auto-merge` | Enable auto-merge after creating or updating a pull request. |
-| `-m, --merge-method <method>` | Auto-merge method: `merge`, `squash`, or `rebase`. Requires `--enable-auto-merge` or `git pr auto-merge`. |
-| `--delete-branch` | Delete the branch after auto-merge. Requires `--enable-auto-merge` or `git pr auto-merge`. |
-| `--admin` | Rejected with `git-pr` auto-merge because GitHub CLI treats it as an immediate admin merge. Use `gh pr merge --admin` directly if you intend to bypass requirements. |
-| `--match-head-commit <sha>` | Require the pull request head commit to match the given SHA when enabling auto-merge. If omitted, `git-pr` uses the local `HEAD` SHA. Requires `--enable-auto-merge` or `git pr auto-merge`. |
+| `-m, --merge-method <method>` | Merge method: `merge`, `squash`, or `rebase`. Requires `--enable-auto-merge`, `git pr auto-merge`, or `git pr merge`. |
+| `--delete-branch` | Delete the branch after merge. Requires `--enable-auto-merge`, `git pr auto-merge`, or `git pr merge`. |
+| `--admin` | Rejected with `git-pr` merge operations because GitHub CLI treats it as an admin bypass. Use `gh pr merge --admin` directly if you intend to bypass requirements. |
+| `--match-head-commit <sha>` | Require the pull request head commit to match the given SHA when merging. If omitted, `git-pr` uses the local `HEAD` SHA. Requires `--enable-auto-merge`, `git pr auto-merge`, or `git pr merge`. |
 | `--disable-auto-merge` | Disable auto-merge on the current PR. Only valid with `git pr auto-merge`. |
 | `--draft` | Create the pull request as a draft. |
 | `-w, --web` | Open the pull request in a browser. |
@@ -316,10 +322,11 @@ SHA256 checks use `sha256sum` when available, then `shasum -a 256`.
 before downloading. URL userinfo, query strings, and fragments are redacted in
 these status messages.
 
-`git pr auto-merge` delegates to `gh pr merge --auto`. Depending on repository
-rules and merge queue state, GitHub CLI may enable deferred auto-merge, add the
-pull request to a merge queue, or merge immediately when requirements are
-already met.
+`git pr merge` delegates to `gh pr merge` without `--auto`, similar to pressing
+GitHub's Merge button for the current pull request. `git pr auto-merge`
+delegates to `gh pr merge --auto`. Depending on repository rules and merge
+queue state, GitHub CLI may enable deferred auto-merge, add the pull request to
+a merge queue, or merge immediately when requirements are already met.
 
 ## Existing Pull Requests
 

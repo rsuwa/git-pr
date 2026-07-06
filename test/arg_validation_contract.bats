@@ -83,7 +83,6 @@ run_git_pr_expect_error() {
   local case_data
   local -a cases=(
     "--definitely-unknown"
-    "merge"
     "--copilot"
     "--copilot-verbose"
     "--copilot-update"
@@ -185,18 +184,22 @@ run_git_pr_expect_error() {
 @test "invalid merge method is rejected" {
   run_git_pr_expect_error "Invalid merge method: fast-forward (use merge|squash|rebase)" \
     auto-merge --merge-method fast-forward
+  run_git_pr_expect_error "Invalid merge method: fast-forward (use merge|squash|rebase)" \
+    merge --merge-method fast-forward
 }
 
-@test "merge method requires auto-merge context" {
-  run_git_pr_expect_error "Auto-merge options require --enable-auto-merge or 'git pr auto-merge'." \
+@test "merge options require a merge context" {
+  run_git_pr_expect_error "Merge options require --enable-auto-merge, 'git pr auto-merge', or 'git pr merge'." \
     --merge-method squash
 }
 
-@test "admin is rejected for git-pr auto-merge" {
-  run_git_pr_expect_error "--admin cannot be used with git-pr auto-merge" \
+@test "admin is rejected for git-pr merge operations" {
+  run_git_pr_expect_error "--admin cannot be used with git-pr merge operations" \
     auto-merge --admin
-  run_git_pr_expect_error "--admin cannot be used with git-pr auto-merge" \
+  run_git_pr_expect_error "--admin cannot be used with git-pr merge operations" \
     --enable-auto-merge --admin
+  run_git_pr_expect_error "--admin cannot be used with git-pr merge operations" \
+    merge --admin
 }
 
 @test "invalid copilot mode and detail are rejected" {
@@ -233,6 +236,41 @@ run_git_pr_expect_error() {
     read -r -a args <<< "$case_data"
     run_git_pr_expect_error "auto-merge subcommand only accepts auto-merge options." auto-merge "${args[@]}"
   done
+}
+
+@test "merge subcommand rejects non-merge options" {
+  local -a args
+  local case_data
+  local -a cases=(
+    "--base main"
+    "--draft"
+    "--web"
+    "--title Manual-title"
+    "--body Manual-body"
+    "--body-file $BATS_TEST_TMPDIR/body.md"
+    "--template pull_request_template.md"
+    "--editor"
+    "--label bug"
+    "--reviewer alice"
+    "--assignee bob"
+    "--fill"
+    "--fill-first"
+    "--fill-verbose"
+    "--no-fill"
+    "--no-edit"
+  )
+
+  for case_data in "${cases[@]}"; do
+    read -r -a args <<< "$case_data"
+    run_git_pr_expect_error "merge subcommand only accepts merge options." merge "${args[@]}"
+  done
+}
+
+@test "merge subcommand rejects auto-merge-only controls" {
+  run_git_pr_expect_error "Use 'git pr merge' without --enable-auto-merge." \
+    merge --enable-auto-merge
+  run_git_pr_expect_error "--disable-auto-merge is only supported with 'git pr auto-merge'." \
+    merge --disable-auto-merge
 }
 
 @test "update subcommand rejects unrelated options" {

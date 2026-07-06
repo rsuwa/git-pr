@@ -2,8 +2,13 @@
 
 ## Unreleased
 
-- Remove deprecated aliases: `git pr merge`, `--copilot`, `--copilot-verbose`,
+## 0.3.0 - 2026-07-06
+
+- Remove deprecated option aliases: `--copilot`, `--copilot-verbose`,
   `--copilot-update`, and `--auto-merge`.
+- Replace the deprecated `git pr merge` auto-merge alias with an immediate
+  merge command that reuses the existing merge method and head-SHA safety
+  checks without enabling auto-merge.
 
 ## 0.2.1 - 2026-07-06
 

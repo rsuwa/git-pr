@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-GIT_PR_VERSION="0.2.1"
+GIT_PR_VERSION="0.3.0"
 COPILOT_UPDATE_START_MARKER="<!-- git-pr:copilot-update:start -->"
 COPILOT_UPDATE_END_MARKER="<!-- git-pr:copilot-update:end -->"
 cleanup_paths=()
@@ -14,6 +14,7 @@ usage() {
   cat <<'USAGE'
 Usage: git pr [create] [options]
        git pr auto-merge [options]
+       git pr merge [options]
        git pr copilot [options]
        git pr update
 
@@ -39,10 +40,10 @@ Options:
   --no-fill                Create: generate missing local body; existing PR: no implicit body update
   --no-edit                Do not edit existing PR title/body; metadata/base may update
   -a, --enable-auto-merge  Enable auto-merge after checks pass (for create/update)
-  -m, --merge-method <m>   merge|squash|rebase (auto-merge only; default: merge)
-  --delete-branch          Delete branch after auto-merge (auto-merge only)
-  --admin                  Rejected with auto-merge; use gh directly for admin merge
-  --match-head-commit <s>  Require head SHA to match for auto-merge
+  -m, --merge-method <m>   merge|squash|rebase (merge actions; default: merge)
+  --delete-branch          Delete branch after merge
+  --admin                  Rejected with git-pr merge; use gh directly for admin merge
+  --match-head-commit <s>  Require head SHA to match for merge
   --disable-auto-merge     Disable auto-merge for existing PR (auto-merge only)
   --draft                  Create as draft
   -w, --web                Open the PR in a browser
@@ -887,11 +888,11 @@ has_disable_auto_merge_conflict() {
     [ -n "$auto_merge_match_head" ]
 }
 
-has_auto_merge_modifier_without_enable() {
+has_merge_modifier_without_context() {
   { [ "$merge_method_explicit" = "true" ] || \
     [ "$auto_merge_delete_branch" = "true" ] || [ "$auto_merge_admin" = "true" ] || \
     [ -n "$auto_merge_match_head" ]; } && \
-    [ "$auto_merge" != "true" ] && [ "$action" != "auto-merge" ]
+    [ "$auto_merge" != "true" ] && [ "$action" != "auto-merge" ] && [ "$action" != "merge" ]
 }
 
 handle_update_action() {
@@ -1017,7 +1018,7 @@ validate_common_options() {
   fi
 }
 
-validate_auto_merge_options() {
+validate_merge_options() {
   if [ "$action" = "auto-merge" ]; then
     if [ "$auto_merge_explicit" = "true" ]; then
       die "Use 'git pr auto-merge' without --enable-auto-merge."
@@ -1030,6 +1031,18 @@ validate_auto_merge_options() {
     fi
   fi
 
+  if [ "$action" = "merge" ]; then
+    if [ "$auto_merge_explicit" = "true" ]; then
+      die "Use 'git pr merge' without --enable-auto-merge."
+    fi
+    if has_non_auto_merge_pr_option; then
+      die "merge subcommand only accepts merge options."
+    fi
+    if [ "$auto_merge_disable" = "true" ]; then
+      die "--disable-auto-merge is only supported with 'git pr auto-merge'."
+    fi
+  fi
+
   if [ "$auto_merge_disable" = "true" ] && [ "$action" != "auto-merge" ]; then
     die "--disable-auto-merge is only supported with 'git pr auto-merge'."
   fi
@@ -1038,16 +1051,16 @@ validate_auto_merge_options() {
     die "--disable-auto-merge cannot be combined with --enable-auto-merge."
   fi
 
-  if [ "$auto_merge_admin" = "true" ] && { [ "$auto_merge" = "true" ] || [ "$action" = "auto-merge" ]; }; then
-    die "--admin cannot be used with git-pr auto-merge because GitHub CLI treats it as an immediate admin merge. Use gh pr merge --admin directly if you intend to bypass requirements."
+  if [ "$auto_merge_admin" = "true" ] && { [ "$auto_merge" = "true" ] || [ "$action" = "auto-merge" ] || [ "$action" = "merge" ]; }; then
+    die "--admin cannot be used with git-pr merge operations because GitHub CLI treats it as an immediate admin merge. Use gh pr merge --admin directly if you intend to bypass requirements."
   fi
 
   if [ "$auto_merge_match_head_explicit" = "true" ] && [ -z "$auto_merge_match_head" ]; then
     die "--match-head-commit requires a commit SHA."
   fi
 
-  if has_auto_merge_modifier_without_enable; then
-    die "Auto-merge options require --enable-auto-merge or 'git pr auto-merge'."
+  if has_merge_modifier_without_context; then
+    die "Merge options require --enable-auto-merge, 'git pr auto-merge', or 'git pr merge'."
   fi
 
   case "$merge_method" in
@@ -1627,7 +1640,7 @@ merge_flag_for_method() {
   esac
 }
 
-expected_auto_merge_head() {
+expected_merge_head() {
   if [ -n "$auto_merge_match_head" ]; then
     printf '%s' "$auto_merge_match_head"
   else
@@ -1635,27 +1648,45 @@ expected_auto_merge_head() {
   fi
 }
 
-enable_auto_merge() {
+run_gh_pr_merge() {
   local pr_number="$1"
+  local use_auto="$2"
   local expected_head
   local pr_head
   local merge_flag
   local -a merge_cmd
 
-  expected_head=$(expected_auto_merge_head)
+  expected_head=$(expected_merge_head)
   pr_head=$(get_pr_field "$pr_number" headRefOid)
   if [ "$pr_head" != "$expected_head" ]; then
     die "PR #$pr_number head SHA ($pr_head) does not match expected head SHA ($expected_head). Push the current branch or pass --match-head-commit."
   fi
 
   merge_flag=$(merge_flag_for_method)
-  merge_cmd=(gh pr merge "$pr_number" --repo "$github_repo" --auto "$merge_flag" --match-head-commit "$expected_head")
+  merge_cmd=(gh pr merge "$pr_number" --repo "$github_repo")
+  if [ "$use_auto" = "true" ]; then
+    merge_cmd+=(--auto)
+  fi
+  merge_cmd+=("$merge_flag" --match-head-commit "$expected_head")
   if [ "$auto_merge_delete_branch" = "true" ]; then
     merge_cmd+=(--delete-branch)
   fi
 
   "${merge_cmd[@]}"
+}
+
+enable_auto_merge() {
+  local pr_number="$1"
+
+  run_gh_pr_merge "$pr_number" "true"
   log_info "Auto-merge requested for PR #$pr_number. GitHub CLI may merge immediately or add the PR to a merge queue when requirements are already met."
+}
+
+merge_pull_request() {
+  local pr_number="$1"
+
+  run_gh_pr_merge "$pr_number" "false"
+  log_info "Merged PR #$pr_number."
 }
 
 action="create"
@@ -1667,6 +1698,10 @@ if [ $# -gt 0 ]; then
       ;;
     auto-merge)
       action="auto-merge"
+      shift
+      ;;
+    merge)
+      action="merge"
       shift
       ;;
     copilot)
@@ -1998,7 +2033,7 @@ fi
 
 handle_update_action
 validate_common_options
-validate_auto_merge_options
+validate_merge_options
 if [ "$action" = "auto-merge" ]; then
   auto_merge="true"
 fi
@@ -2024,17 +2059,21 @@ if ! gh auth status --hostname "$github_host" >/dev/null 2>&1; then
   die "GitHub CLI is not authenticated for $github_host. Run: gh auth login --hostname $github_host"
 fi
 
-if [ "$action" = "auto-merge" ]; then
+if [ "$action" = "auto-merge" ] || [ "$action" = "merge" ]; then
   pr_number=$(get_current_pr_number)
   [ -n "$pr_number" ] || die "No open PR found for current branch."
 
-  if [ "$auto_merge_disable" = "true" ]; then
+  if [ "$action" = "auto-merge" ] && [ "$auto_merge_disable" = "true" ]; then
     gh pr merge "$pr_number" --repo "$github_repo" --disable-auto
     log_info "Auto-merge disabled for PR #$pr_number."
     exit 0
   fi
 
-  enable_auto_merge "$pr_number"
+  if [ "$action" = "auto-merge" ]; then
+    enable_auto_merge "$pr_number"
+  else
+    merge_pull_request "$pr_number"
+  fi
   exit 0
 fi
 
