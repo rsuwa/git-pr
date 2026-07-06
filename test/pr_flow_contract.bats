@@ -315,6 +315,7 @@ setup() {
   assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--title Updated\\ title" "--body Updated\\ body"
   [[ "$output" == *"INFO: Updated PR #123: title, body."* ]]
   assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT ls-remote"
   assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count"
   assert_log_not_contains "Base branch 'main' not found"
 }
@@ -341,6 +342,29 @@ setup() {
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT ls-remote --exit-code --heads origin release"
   assert_no_git_push
   assert_log_not_contains "gh pr edit"
+}
+
+@test "existing PR explicit base requires exact remote ref match" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_LS_REMOTE_REF="refs/heads/foo/release"
+
+  run "$GIT_PR" --no-edit --base release
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Base branch 'release' was not found on origin. Create it or choose an existing branch with --base."* ]]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT ls-remote --exit-code --heads origin release"
+  assert_no_git_push
+  assert_log_not_contains "gh pr edit"
+}
+
+@test "existing PR explicit slash base passes exact remote ref preflight" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+
+  run "$GIT_PR" --no-edit --base release/2026.07
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT ls-remote --exit-code --heads origin release/2026.07"
+  assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--base release/2026.07"
 }
 
 @test "existing PR updates body file only" {

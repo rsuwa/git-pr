@@ -140,7 +140,8 @@ case "${1-}" in
   ls-remote)
     if [ "${2-}" = "--exit-code" ] && [ "${3-}" = "--heads" ] && [ "${4-}" = "origin" ] && [ -n "${5-}" ]; then
       [ "${GIT_PR_FAKE_REMOTE_BASE_EXISTS:-true}" = "true" ] || exit 2
-      printf '%s\trefs/heads/%s\n' "${GIT_PR_FAKE_REMOTE_BASE_SHA:-remote-base}" "${5-}"
+      remote_ref="${GIT_PR_FAKE_LS_REMOTE_REF:-refs/heads/${5}}"
+      printf '%s\t%s\n' "${GIT_PR_FAKE_REMOTE_BASE_SHA:-remote-base}" "$remote_ref"
     else
       exit 1
     fi
