@@ -39,7 +39,7 @@ case "${1-}" in
         ;;
       --abbrev-ref)
         if [ "${GIT_PR_FAKE_HAS_UPSTREAM:-false}" = "true" ]; then
-          printf 'origin/%s\n' "$GIT_PR_FAKE_BRANCH"
+          printf '%s\n' "${GIT_PR_FAKE_UPSTREAM_REF:-origin/$GIT_PR_FAKE_BRANCH}"
         else
           exit 1
         fi

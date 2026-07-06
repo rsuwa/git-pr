@@ -61,6 +61,27 @@ setup() {
   assert_log_not_contains "gh pr create"
 }
 
+@test "credentialed HTTPS origin normalizes repository owner and name" {
+  export GIT_PR_FAKE_ORIGIN_URL="https://token@github.com/example/repo.git"
+
+  run "$GIT_PR"
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--fill"
+  assert_log_not_contains "token@github.com"
+}
+
+@test "rev-list count failure fails before pushing" {
+  export GIT_PR_FAKE_REV_LIST_COUNT_STATUS=2
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to count commits"* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
 @test "create with --fill-first passes through fill-first mode" {
   run "$GIT_PR" --fill-first
 
@@ -198,7 +219,7 @@ setup() {
   assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
 }
 
-@test "existing upstream uses plain git push" {
+@test "existing origin upstream uses plain git push" {
   export GIT_PR_FAKE_HAS_UPSTREAM=true
 
   run "$GIT_PR"
@@ -207,4 +228,16 @@ setup() {
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push"
   assert_log_not_contains "push -u origin HEAD"
   assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push" "gh pr create"
+}
+
+@test "non-origin upstream is rejected before pushing" {
+  export GIT_PR_FAKE_HAS_UPSTREAM=true
+  export GIT_PR_FAKE_UPSTREAM_REF="fork/feature"
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Existing upstream must be origin/feature"* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
 }

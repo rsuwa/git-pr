@@ -776,11 +776,13 @@ github_repo_from_origin_url() {
     https://*/*/*)
       rest="${url#https://}"
       host="${rest%%/*}"
+      host="${host##*@}"
       path="${rest#*/}"
       ;;
     http://*/*/*)
       rest="${url#http://}"
       host="${rest%%/*}"
+      host="${host##*@}"
       path="${rest#*/}"
       ;;
     */*)
@@ -1184,6 +1186,20 @@ if [ "$action" = "copilot" ]; then
 fi
 
 if [ "$action" = "update" ]; then
+  if [ "$base_branch_explicit" = "true" ] || [ "$merge_method_explicit" = "true" ] || \
+     [ "$auto_merge_explicit" = "true" ] || [ "$auto_merge_delete_branch" = "true" ] || \
+     [ "$auto_merge_admin" = "true" ] || [ "$auto_merge_disable" = "true" ] || \
+     [ -n "$auto_merge_match_head" ] || [ "$draft_explicit" = "true" ] || \
+     [ "$open_web_explicit" = "true" ] || [ "$use_copilot" = "true" ] || \
+     [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ] || \
+     [ "$language_explicit" = "true" ] || [ "$diff_exclude_explicit" = "true" ] || \
+     [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ] || \
+     [ -n "$template_file" ] || [ "$editor" = "true" ] || \
+     [ ${#label_args[@]} -gt 0 ] || [ ${#reviewer_args[@]} -gt 0 ] || [ ${#assignee_args[@]} -gt 0 ] || \
+     [ "$fill_explicit" = "true" ] || [ "$no_fill_explicit" = "true" ] || \
+     [ "$skip_edit" = "true" ]; then
+    die "update subcommand does not accept PR options."
+  fi
   update_self
   exit 0
 fi
@@ -1372,7 +1388,7 @@ else
   die "Base branch '$base_branch' not found."
 fi
 
-commit_count=$(git -C "$repo_root" rev-list --count "$base_ref..HEAD" || true)
+commit_count=$(git -C "$repo_root" rev-list --count "$base_ref..HEAD") || die "Failed to count commits between $base_ref and HEAD."
 pr_number=$(get_current_pr_number)
 
 if [ -n "$body_file" ] && [ "$body_file" != "-" ] && [ ! -f "$body_file" ]; then
@@ -1421,12 +1437,15 @@ if ! git -C "$repo_root" diff --quiet || ! git -C "$repo_root" diff --cached --q
   log_warn "Working tree has uncommitted changes. They won't be included in the PR."
 fi
 
-if ! git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
-  log_info "Pushing and setting upstream to origin/$current_branch"
-  git -C "$repo_root" push -u origin HEAD
-else
+if upstream_ref=$(git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null); then
+  if [ "$upstream_ref" != "origin/$current_branch" ]; then
+    die "Existing upstream must be origin/$current_branch for this origin-only workflow; found $upstream_ref."
+  fi
   log_info "Pushing current branch"
   git -C "$repo_root" push
+else
+  log_info "Pushing and setting upstream to origin/$current_branch"
+  git -C "$repo_root" push -u origin HEAD
 fi
 
 if [ -z "$pr_number" ]; then
