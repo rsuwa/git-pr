@@ -137,6 +137,14 @@ case "${1-}" in
     [ "${GIT_PR_FAKE_FETCH_FAIL:-false}" != "true" ] || exit 1
     exit 0
     ;;
+  ls-remote)
+    if [ "${2-}" = "--exit-code" ] && [ "${3-}" = "--heads" ] && [ "${4-}" = "origin" ] && [ -n "${5-}" ]; then
+      [ "${GIT_PR_FAKE_REMOTE_BASE_EXISTS:-true}" = "true" ] || exit 2
+      printf '%s\trefs/heads/%s\n' "${GIT_PR_FAKE_REMOTE_BASE_SHA:-remote-base}" "${5-}"
+    else
+      exit 1
+    fi
+    ;;
   log)
     if [ "${2-}" = "-1" ]; then
       printf '%s\n' "${GIT_PR_FAKE_LAST_SUBJECT:-Test title}"

@@ -330,6 +330,19 @@ setup() {
   assert_log_not_contains "gh pr edit"
 }
 
+@test "existing PR explicit base must exist before push" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_REMOTE_BASE_EXISTS=false
+
+  run "$GIT_PR" --no-edit --base release
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Base branch 'release' was not found on origin. Create it or choose an existing branch with --base."* ]]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT ls-remote --exit-code --heads origin release"
+  assert_no_git_push
+  assert_log_not_contains "gh pr edit"
+}
+
 @test "existing PR updates body file only" {
   local body_file="$BATS_TEST_TMPDIR/update-body.md"
   export GIT_PR_FAKE_PR_NUMBER=123
