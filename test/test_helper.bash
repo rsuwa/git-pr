@@ -312,7 +312,22 @@ case "${1-} ${2-}" in
     printf '%s\n' "${GIT_PR_FAKE_CREATED_PR_NUMBER:-1}" > "$GIT_PR_FAKE_LOG.created-pr"
     printf 'https://github.com/example/repo/pull/1\n'
     ;;
-  "pr edit"|"pr merge")
+  "pr edit")
+    if has_arg --title "$@"; then
+      arg_after --title "$@" > "$GIT_PR_FAKE_LOG.pr-edit-title"
+    fi
+    if has_arg --body "$@"; then
+      arg_after --body "$@" > "$GIT_PR_FAKE_LOG.pr-edit-body"
+    fi
+    if has_arg --body-file "$@"; then
+      arg_after --body-file "$@" > "$GIT_PR_FAKE_LOG.pr-edit-body-file"
+    fi
+    if has_arg --base "$@"; then
+      arg_after --base "$@" > "$GIT_PR_FAKE_LOG.pr-edit-base"
+    fi
+    exit 0
+    ;;
+  "pr merge")
     exit 0
     ;;
   *)
