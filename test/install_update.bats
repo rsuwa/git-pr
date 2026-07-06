@@ -313,6 +313,66 @@ OLD
   [[ "$output" != *"token=abc"* ]]
 }
 
+@test "install redacts credentials and query strings in download errors" {
+  install_dir="$BATS_TEST_TMPDIR/install"
+  write_failing_curl
+
+  run env \
+    -u GIT_PR_INSTALL_SHA256 \
+    -u GIT_PR_CHECKSUM_URL \
+    GIT_PR_INSTALL_URL="https://user:secret@example.invalid/git-pr?token=abc#frag" \
+    GIT_PR_INSTALL_DIR="$install_dir" \
+    "$BATS_TEST_DIRNAME/../install.sh"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to download git-pr from https://REDACTED@example.invalid/git-pr?REDACTED"* ]]
+  [[ "$output" != *"secret"* ]]
+  [[ "$output" != *"token=abc"* ]]
+}
+
+@test "install redacts credentials and query strings in checksum download errors" {
+  install_dir="$BATS_TEST_TMPDIR/install"
+  write_checksum_failing_curl
+
+  run env \
+    -u GIT_PR_INSTALL_SHA256 \
+    -u GIT_PR_CHECKSUM_URL \
+    GIT_PR_INSTALL_URL="https://user:secret@example.invalid/releases/latest/download/git-pr?token=abc#frag" \
+    GIT_PR_INSTALL_DIR="$install_dir" \
+    "$BATS_TEST_DIRNAME/../install.sh"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to download SHA256SUMS from https://REDACTED@example.invalid/releases/latest/download/SHA256SUMS"* ]]
+  [[ "$output" != *"secret"* ]]
+  [[ "$output" != *"token=abc"* ]]
+}
+
+@test "update targets the invoked script before another PATH git-pr" {
+  other_bin="$BATS_TEST_TMPDIR/other-bin"
+  mkdir -p "$other_bin"
+  cat > "$other_bin/git-pr" <<'OTHER'
+#!/usr/bin/env bash
+printf 'other git-pr\n'
+OTHER
+  chmod 755 "$other_bin/git-pr"
+  cp "$BATS_TEST_DIRNAME/../git-pr" "$GIT_PR_TEST_BIN/git-pr"
+  chmod 755 "$GIT_PR_TEST_BIN/git-pr"
+
+  run env \
+    -u GIT_PR_UPDATE_SHA256 \
+    -u GIT_PR_UPDATE_CHECKSUM_URL \
+    PATH="$other_bin:$GIT_PR_TEST_BIN:$PATH" \
+    GIT_PR_UPDATE_URL="https://example.invalid/releases/latest/download/git-pr" \
+    "$GIT_PR_TEST_BIN/git-pr" update
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"INFO: Install target: $GIT_PR_TEST_BIN/git-pr"* ]]
+  run "$GIT_PR_TEST_BIN/git-pr"
+  [ "$output" = "downloaded git-pr" ]
+  run "$other_bin/git-pr"
+  [ "$output" = "other git-pr" ]
+}
+
 @test "update checksum mismatch preserves existing executable" {
   cp "$BATS_TEST_DIRNAME/../git-pr" "$GIT_PR_TEST_BIN/git-pr"
   chmod 755 "$GIT_PR_TEST_BIN/git-pr"
@@ -532,6 +592,7 @@ OLD
     HOME="$home" \
     PATH="$tool_bin" \
     GIT_PR_UPDATE_URL="https://example.invalid/releases/latest/download/git-pr" \
+    GIT_PR_UPDATE_INSTALL_PATH="$install_path" \
     "$BATS_TEST_DIRNAME/../git-pr" update
 
   [ "$status" -ne 0 ]

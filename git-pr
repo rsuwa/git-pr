@@ -1230,6 +1230,26 @@ cleanup_update_files() {
 
 resolve_update_install_path() {
   local install_path
+  local invoked="${BASH_SOURCE[0]:-$0}"
+  local invoked_base
+  local invoked_dir
+
+  if [ -n "${GIT_PR_UPDATE_INSTALL_PATH:-}" ]; then
+    printf '%s' "$GIT_PR_UPDATE_INSTALL_PATH"
+    return 0
+  fi
+
+  case "$invoked" in
+    */*)
+      if [ -e "$invoked" ]; then
+        invoked_dir="${invoked%/*}"
+        invoked_base="${invoked##*/}"
+        install_path=$(cd "$invoked_dir" && printf '%s/%s' "$(pwd -P)" "$invoked_base")
+        printf '%s' "$install_path"
+        return 0
+      fi
+      ;;
+  esac
 
   install_path=$(command -v git-pr 2>/dev/null || true)
   if [ -z "$install_path" ]; then
@@ -1273,6 +1293,9 @@ install_downloaded_update() {
   chmod 755 "$temp_file" || die "Failed to make downloaded git-pr executable."
   ensure_update_target_is_safe "$install_path"
   mv -f "$temp_file" "$install_path" || die "Failed to install git-pr to $install_path"
+  if [ -L "$install_path" ] || [ -d "$install_path" ] || [ ! -f "$install_path" ] || [ ! -x "$install_path" ]; then
+    die "Updated git-pr target is not a regular executable file: $install_path"
+  fi
 }
 
 update_self() {
@@ -1431,6 +1454,9 @@ github_repo_from_origin_url() {
   local path=""
   local rest
 
+  url="${url%%#*}"
+  url="${url%%\?*}"
+
   case "$url" in
     git@*:*)
       rest="${url#git@}"
@@ -1476,6 +1502,9 @@ github_host_from_origin_url() {
   local url="$1"
   local host=""
   local rest
+
+  url="${url%%#*}"
+  url="${url%%\?*}"
 
   case "$url" in
     git@*:*)
@@ -1949,8 +1978,8 @@ fi
 if ! origin_url=$(git -C "$repo_root" remote get-url origin 2>/dev/null); then
   die "Remote 'origin' not found."
 fi
-github_repo=$(github_repo_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $origin_url"
-github_host=$(github_host_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $origin_url"
+github_repo=$(github_repo_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$origin_url")"
+github_host=$(github_host_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$origin_url")"
 github_owner=$(github_owner_from_repo "$github_repo")
 
 if ! gh auth status --hostname "$github_host" >/dev/null 2>&1; then
