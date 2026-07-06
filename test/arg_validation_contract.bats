@@ -178,6 +178,13 @@ run_git_pr_expect_error() {
     --merge-method squash
 }
 
+@test "admin is rejected for git-pr auto-merge" {
+  run_git_pr_expect_error "--admin cannot be used with git-pr auto-merge" \
+    auto-merge --admin
+  run_git_pr_expect_error "--admin cannot be used with git-pr auto-merge" \
+    --enable-auto-merge --admin
+}
+
 @test "invalid copilot mode and detail are rejected" {
   run_git_pr_expect_error "Invalid --mode: rewrite (use create|update|auto)" \
     copilot --mode rewrite

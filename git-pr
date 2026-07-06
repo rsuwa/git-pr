@@ -44,7 +44,7 @@ Options:
   --auto-merge             (deprecated) Alias for --enable-auto-merge
   -m, --merge-method <m>   merge|squash|rebase (auto-merge only; default: merge)
   --delete-branch          Delete branch after auto-merge (auto-merge only)
-  --admin                  Use admin privileges for auto-merge (auto-merge only)
+  --admin                  Rejected with auto-merge; use gh directly for admin merge
   --match-head-commit <s>  Require head SHA to match for auto-merge
   --disable-auto-merge     Disable auto-merge for existing PR (auto-merge only)
   --draft                  Create as draft
@@ -991,6 +991,10 @@ validate_auto_merge_options() {
     die "--disable-auto-merge cannot be combined with --enable-auto-merge."
   fi
 
+  if [ "$auto_merge_admin" = "true" ] && { [ "$auto_merge" = "true" ] || [ "$action" = "auto-merge" ]; }; then
+    die "--admin cannot be used with git-pr auto-merge because GitHub CLI treats it as an immediate admin merge. Use gh pr merge --admin directly if you intend to bypass requirements."
+  fi
+
   if [ "$auto_merge_match_head_explicit" = "true" ] && [ -z "$auto_merge_match_head" ]; then
     die "--match-head-commit requires a commit SHA."
   fi
@@ -1583,12 +1587,9 @@ enable_auto_merge() {
   if [ "$auto_merge_delete_branch" = "true" ]; then
     merge_cmd+=(--delete-branch)
   fi
-  if [ "$auto_merge_admin" = "true" ]; then
-    merge_cmd+=(--admin)
-  fi
 
   "${merge_cmd[@]}"
-  log_info "Auto-merge enabled for PR #$pr_number."
+  log_info "Auto-merge requested for PR #$pr_number. GitHub CLI may merge immediately or add the PR to a merge queue when requirements are already met."
 }
 
 action="create"
@@ -1598,7 +1599,12 @@ if [ $# -gt 0 ]; then
       action="create"
       shift
       ;;
-    auto-merge|merge)
+    auto-merge)
+      action="auto-merge"
+      shift
+      ;;
+    merge)
+      log_warn "'git pr merge' is deprecated. Use 'git pr auto-merge'."
       action="auto-merge"
       shift
       ;;
