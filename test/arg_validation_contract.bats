@@ -190,3 +190,31 @@ run_git_pr_expect_error() {
     run_git_pr_expect_error "auto-merge subcommand only accepts auto-merge options." auto-merge "${args[@]}"
   done
 }
+
+@test "update subcommand rejects unrelated options" {
+  local -a args
+  local case_data
+  local -a cases=(
+    "--base main"
+    "--disable-auto-merge"
+    "--language ja"
+    "--label bug"
+    "--fill"
+    "--template="
+    "--match-head-commit="
+  )
+
+  for case_data in "${cases[@]}"; do
+    read -r -a args <<< "$case_data"
+    run_git_pr_expect_error "update subcommand does not accept PR options." update "${args[@]}"
+  done
+}
+
+@test "update subcommand rejects empty-valued PR options" {
+  run_git_pr_expect_error "update subcommand does not accept PR options." update --title ""
+  run_git_pr_expect_error "update subcommand does not accept PR options." update --body ""
+  run_git_pr_expect_error "update subcommand does not accept PR options." update --body-file ""
+  run_git_pr_expect_error "update subcommand does not accept PR options." update --label ""
+  run_git_pr_expect_error "update subcommand does not accept PR options." update --reviewer ""
+  run_git_pr_expect_error "update subcommand does not accept PR options." update --assignee ""
+}

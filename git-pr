@@ -776,11 +776,13 @@ github_repo_from_origin_url() {
     https://*/*/*)
       rest="${url#https://}"
       host="${rest%%/*}"
+      host="${host##*@}"
       path="${rest#*/}"
       ;;
     http://*/*/*)
       rest="${url#http://}"
       host="${rest%%/*}"
+      host="${host##*@}"
       path="${rest#*/}"
       ;;
     */*)
@@ -922,12 +924,19 @@ copilot_detail_explicit="false"
 language="${GIT_PR_LANGUAGE:-}"
 language_explicit="false"
 diff_exclude_explicit="false"
+label_explicit="false"
+reviewer_explicit="false"
+assignee_explicit="false"
 skip_edit="false"
 editor="false"
 template_file=""
+template_file_explicit="false"
 title=""
+title_explicit="false"
 body=""
+body_explicit="false"
 body_file=""
+body_file_explicit="false"
 copilot_existing_title=""
 copilot_existing_body=""
 copilot_update_effective="false"
@@ -953,18 +962,21 @@ while [ $# -gt 0 ]; do
     -t|--title)
       require_option_value "$1" "$#"
       title="$2"
+      title_explicit="true"
       fill="false"
       shift 2
       ;;
     -d|--body)
       require_option_value "$1" "$#"
       body="$2"
+      body_explicit="true"
       fill="false"
       shift 2
       ;;
     -F|--body-file)
       require_option_value "$1" "$#"
       body_file="$2"
+      body_file_explicit="true"
       fill="false"
       shift 2
       ;;
@@ -975,36 +987,44 @@ while [ $# -gt 0 ]; do
     -T|--template)
       require_option_value "$1" "$#"
       template_file="$2"
+      template_file_explicit="true"
       shift 2
       ;;
     --template=*)
       template_file="${1#*=}"
+      template_file_explicit="true"
       shift
       ;;
     --label)
       require_option_value "$1" "$#"
+      label_explicit="true"
       append_label_args "$2"
       shift 2
       ;;
     --label=*)
+      label_explicit="true"
       append_label_args "${1#*=}"
       shift
       ;;
     --reviewer)
       require_option_value "$1" "$#"
+      reviewer_explicit="true"
       append_reviewer_args "$2"
       shift 2
       ;;
     --reviewer=*)
+      reviewer_explicit="true"
       append_reviewer_args "${1#*=}"
       shift
       ;;
     --assignee)
       require_option_value "$1" "$#"
+      assignee_explicit="true"
       append_assignee_args "$2"
       shift 2
       ;;
     --assignee=*)
+      assignee_explicit="true"
       append_assignee_args "${1#*=}"
       shift
       ;;
@@ -1184,6 +1204,21 @@ if [ "$action" = "copilot" ]; then
 fi
 
 if [ "$action" = "update" ]; then
+  if [ "$base_branch_explicit" = "true" ] || [ "$merge_method_explicit" = "true" ] || \
+     [ "$auto_merge_explicit" = "true" ] || [ "$auto_merge_delete_branch" = "true" ] || \
+     [ "$auto_merge_admin" = "true" ] || [ "$auto_merge_disable" = "true" ] || \
+     [ "$auto_merge_match_head_explicit" = "true" ] || [ "$draft_explicit" = "true" ] || \
+     [ "$open_web_explicit" = "true" ] || [ "$use_copilot" = "true" ] || \
+     [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ] || \
+     [ "$language_explicit" = "true" ] || [ "$diff_exclude_explicit" = "true" ] || \
+     [ "$title_explicit" = "true" ] || [ "$body_explicit" = "true" ] || \
+     [ "$body_file_explicit" = "true" ] || [ "$template_file_explicit" = "true" ] || \
+     [ "$editor" = "true" ] || \
+     [ "$label_explicit" = "true" ] || [ "$reviewer_explicit" = "true" ] || [ "$assignee_explicit" = "true" ] || \
+     [ "$fill_explicit" = "true" ] || [ "$no_fill_explicit" = "true" ] || \
+     [ "$skip_edit" = "true" ]; then
+    die "update subcommand does not accept PR options."
+  fi
   update_self
   exit 0
 fi
@@ -1263,9 +1298,9 @@ if [ "$action" = "auto-merge" ]; then
   if [ "$base_branch_explicit" = "true" ] || [ "$draft_explicit" = "true" ] || [ "$open_web_explicit" = "true" ] || \
      [ "$use_copilot" = "true" ] || [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ] || \
      [ "$language_explicit" = "true" ] || [ "$diff_exclude_explicit" = "true" ] || \
-     [ -n "$title" ] || [ -n "$body" ] || \
-     [ -n "$body_file" ] || [ -n "$template_file" ] || [ "$editor" = "true" ] || \
-     [ ${#label_args[@]} -gt 0 ] || [ ${#reviewer_args[@]} -gt 0 ] || [ ${#assignee_args[@]} -gt 0 ] || \
+     [ "$title_explicit" = "true" ] || [ "$body_explicit" = "true" ] || \
+     [ "$body_file_explicit" = "true" ] || [ "$template_file_explicit" = "true" ] || [ "$editor" = "true" ] || \
+     [ "$label_explicit" = "true" ] || [ "$reviewer_explicit" = "true" ] || [ "$assignee_explicit" = "true" ] || \
      [ "$fill_explicit" = "true" ] || [ "$no_fill_explicit" = "true" ] || \
      [ "$skip_edit" = "true" ]; then
     die "auto-merge subcommand only accepts auto-merge options."
@@ -1372,7 +1407,7 @@ else
   die "Base branch '$base_branch' not found."
 fi
 
-commit_count=$(git -C "$repo_root" rev-list --count "$base_ref..HEAD" || true)
+commit_count=$(git -C "$repo_root" rev-list --count "$base_ref..HEAD") || die "Failed to count commits between $base_ref and HEAD."
 pr_number=$(get_current_pr_number)
 
 if [ -n "$body_file" ] && [ "$body_file" != "-" ] && [ ! -f "$body_file" ]; then
@@ -1421,12 +1456,15 @@ if ! git -C "$repo_root" diff --quiet || ! git -C "$repo_root" diff --cached --q
   log_warn "Working tree has uncommitted changes. They won't be included in the PR."
 fi
 
-if ! git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
-  log_info "Pushing and setting upstream to origin/$current_branch"
-  git -C "$repo_root" push -u origin HEAD
-else
+if upstream_ref=$(git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null); then
+  if [ "$upstream_ref" != "origin/$current_branch" ]; then
+    die "Existing upstream must be origin/$current_branch for this origin-only workflow; found $upstream_ref."
+  fi
   log_info "Pushing current branch"
   git -C "$repo_root" push
+else
+  log_info "Pushing and setting upstream to origin/$current_branch"
+  git -C "$repo_root" push -u origin HEAD
 fi
 
 if [ -z "$pr_number" ]; then
