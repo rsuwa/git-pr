@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.1 - 2026-07-06
+
 - Redact credentials and query strings in more install/update/remote failure
   messages, and let `git pr update` target the invoked executable or an
   explicit `GIT_PR_UPDATE_INSTALL_PATH`.
@@ -17,6 +19,8 @@
 - Fix Bash 3.2 empty-array handling for macOS compatibility.
 - Document release asset requirements, `latest` URL tradeoffs, and pinned-tag
   install/update examples.
+- Fix the real Copilot CLI noninteractive prompt contract by avoiding truncated
+  `--stream off` output and tightening the opt-in smoke test.
 
 ## 0.2.0 - 2026-07-06
 
