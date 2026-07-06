@@ -574,6 +574,181 @@ append_pr_create_fill_args() {
   esac
 }
 
+has_nonempty_manual_content_value() {
+  [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ]
+}
+
+has_copilot_scoped_option() {
+  [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ]
+}
+
+has_copilot_config_option() {
+  [ "$language_explicit" = "true" ] || [ "$diff_exclude_explicit" = "true" ]
+}
+
+has_metadata_option() {
+  [ "$label_explicit" = "true" ] || \
+    [ "$reviewer_explicit" = "true" ] || \
+    [ "$assignee_explicit" = "true" ]
+}
+
+has_body_generation_option() {
+  [ "$fill_explicit" = "true" ] || [ "$no_fill_explicit" = "true" ]
+}
+
+has_non_auto_merge_pr_option() {
+  [ "$base_branch_explicit" = "true" ] || [ "$draft_explicit" = "true" ] || \
+    [ "$open_web_explicit" = "true" ] || [ "$use_copilot" = "true" ] || \
+    has_copilot_scoped_option || has_copilot_config_option || \
+    [ "$title_explicit" = "true" ] || [ "$body_explicit" = "true" ] || \
+    [ "$body_file_explicit" = "true" ] || [ "$template_file_explicit" = "true" ] || \
+    [ "$editor" = "true" ] || has_metadata_option || has_body_generation_option || \
+    [ "$skip_edit" = "true" ]
+}
+
+has_update_subcommand_pr_option() {
+  has_non_auto_merge_pr_option || \
+    [ "$merge_method_explicit" = "true" ] || \
+    [ "$auto_merge_explicit" = "true" ] || \
+    [ "$auto_merge_delete_branch" = "true" ] || \
+    [ "$auto_merge_admin" = "true" ] || \
+    [ "$auto_merge_disable" = "true" ] || \
+    [ "$auto_merge_match_head_explicit" = "true" ]
+}
+
+has_disable_auto_merge_conflict() {
+  [ "$merge_method_explicit" = "true" ] || \
+    [ "$auto_merge_delete_branch" = "true" ] || \
+    [ "$auto_merge_admin" = "true" ] || \
+    [ -n "$auto_merge_match_head" ]
+}
+
+has_auto_merge_modifier_without_enable() {
+  { [ "$auto_merge_delete_branch" = "true" ] || [ "$auto_merge_admin" = "true" ] || \
+    [ -n "$auto_merge_match_head" ]; } && \
+    [ "$auto_merge" != "true" ] && [ "$action" != "auto-merge" ]
+}
+
+handle_update_action() {
+  if [ "$action" != "update" ]; then
+    return 0
+  fi
+
+  if has_update_subcommand_pr_option; then
+    die "update subcommand does not accept PR options."
+  fi
+  update_self
+  exit 0
+}
+
+validate_common_options() {
+  if [ -n "$body" ] && [ -n "$body_file" ]; then
+    die "--body and --body-file cannot be used together."
+  fi
+
+  if [ -n "$template_file" ] && { [ -n "$body" ] || [ -n "$body_file" ]; }; then
+    die "--template cannot be combined with --body/--body-file."
+  fi
+
+  if [ "$fill_mode_conflict" = "true" ]; then
+    die "Choose only one of --fill, --fill-first, --fill-verbose."
+  fi
+
+  if [ "$no_fill_explicit" = "true" ] && [ "$fill_explicit" = "true" ]; then
+    die "--no-fill cannot be combined with --fill/--fill-first/--fill-verbose."
+  fi
+
+  if has_copilot_scoped_option && [ "$use_copilot" != "true" ]; then
+    die "--mode/--detail require 'git pr copilot' or --copilot."
+  fi
+
+  if has_copilot_config_option && [ "$use_copilot" != "true" ]; then
+    die "--language/--diff-exclude require 'git pr copilot' or --copilot."
+  fi
+
+  if [ "$copilot_mode_explicit" = "true" ]; then
+    case "$copilot_mode" in
+      create|update|auto)
+        ;;
+      *)
+        die "Invalid --mode: $copilot_mode (use create|update|auto)"
+        ;;
+    esac
+  fi
+
+  if [ "$copilot_detail_explicit" = "true" ]; then
+    case "$copilot_detail" in
+      normal|verbose)
+        ;;
+      *)
+        die "Invalid --detail: $copilot_detail (use normal|verbose)"
+        ;;
+    esac
+  fi
+
+  if [ "$use_copilot" = "true" ] && has_nonempty_manual_content_value; then
+    die "--copilot cannot be combined with --title/--body/--body-file."
+  fi
+
+  if [ "$use_copilot" = "true" ] && has_body_generation_option; then
+    die "--copilot cannot be combined with --fill/--no-fill."
+  fi
+
+  if [ "$fill_explicit" = "true" ] && has_nonempty_manual_content_value; then
+    die "--fill/--fill-first/--fill-verbose cannot be combined with --title/--body/--body-file."
+  fi
+
+  if [ "$fill_explicit" = "true" ] && [ -n "$template_file" ]; then
+    die "--fill/--fill-first/--fill-verbose cannot be combined with --template."
+  fi
+
+  if [ "$skip_edit" = "true" ] && { [ "$use_copilot" = "true" ] || has_nonempty_manual_content_value || has_body_generation_option; }; then
+    die "--no-edit cannot be combined with options that modify the PR body/title."
+  fi
+
+  if [ "$skip_edit" = "true" ] && { [ "$editor" = "true" ] || [ -n "$template_file" ]; }; then
+    die "--no-edit cannot be combined with --editor/--template."
+  fi
+}
+
+validate_auto_merge_options() {
+  if [ "$action" = "auto-merge" ]; then
+    if [ "$auto_merge_explicit" = "true" ]; then
+      die "Use 'git pr auto-merge' without --enable-auto-merge."
+    fi
+    if has_non_auto_merge_pr_option; then
+      die "auto-merge subcommand only accepts auto-merge options."
+    fi
+    if [ "$auto_merge_disable" = "true" ] && has_disable_auto_merge_conflict; then
+      die "--disable-auto-merge cannot be combined with merge options."
+    fi
+  fi
+
+  if [ "$auto_merge_disable" = "true" ] && [ "$action" != "auto-merge" ]; then
+    die "--disable-auto-merge is only supported with 'git pr auto-merge'."
+  fi
+
+  if [ "$auto_merge_disable" = "true" ] && [ "$auto_merge_explicit" = "true" ]; then
+    die "--disable-auto-merge cannot be combined with --enable-auto-merge."
+  fi
+
+  if [ "$auto_merge_match_head_explicit" = "true" ] && [ -z "$auto_merge_match_head" ]; then
+    die "--match-head-commit requires a commit SHA."
+  fi
+
+  if has_auto_merge_modifier_without_enable; then
+    die "Auto-merge options require --enable-auto-merge or 'git pr auto-merge'."
+  fi
+
+  case "$merge_method" in
+    merge|squash|rebase)
+      ;;
+    *)
+      die "Invalid merge method: $merge_method (use merge|squash|rebase)"
+      ;;
+  esac
+}
+
 generate_body_from_commits() {
   local first_commit
   case "$fill_mode" in
@@ -1300,145 +1475,12 @@ if [ "$action" = "copilot" ]; then
   fill="false"
 fi
 
-if [ "$action" = "update" ]; then
-  if [ "$base_branch_explicit" = "true" ] || [ "$merge_method_explicit" = "true" ] || \
-     [ "$auto_merge_explicit" = "true" ] || [ "$auto_merge_delete_branch" = "true" ] || \
-     [ "$auto_merge_admin" = "true" ] || [ "$auto_merge_disable" = "true" ] || \
-     [ "$auto_merge_match_head_explicit" = "true" ] || [ "$draft_explicit" = "true" ] || \
-     [ "$open_web_explicit" = "true" ] || [ "$use_copilot" = "true" ] || \
-     [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ] || \
-     [ "$language_explicit" = "true" ] || [ "$diff_exclude_explicit" = "true" ] || \
-     [ "$title_explicit" = "true" ] || [ "$body_explicit" = "true" ] || \
-     [ "$body_file_explicit" = "true" ] || [ "$template_file_explicit" = "true" ] || \
-     [ "$editor" = "true" ] || \
-     [ "$label_explicit" = "true" ] || [ "$reviewer_explicit" = "true" ] || [ "$assignee_explicit" = "true" ] || \
-     [ "$fill_explicit" = "true" ] || [ "$no_fill_explicit" = "true" ] || \
-     [ "$skip_edit" = "true" ]; then
-    die "update subcommand does not accept PR options."
-  fi
-  update_self
-  exit 0
-fi
-
-if [ -n "$body" ] && [ -n "$body_file" ]; then
-  die "--body and --body-file cannot be used together."
-fi
-
-if [ -n "$template_file" ] && { [ -n "$body" ] || [ -n "$body_file" ]; }; then
-  die "--template cannot be combined with --body/--body-file."
-fi
-
-if [ "$fill_mode_conflict" = "true" ]; then
-  die "Choose only one of --fill, --fill-first, --fill-verbose."
-fi
-
-if [ "$no_fill_explicit" = "true" ] && [ "$fill_explicit" = "true" ]; then
-  die "--no-fill cannot be combined with --fill/--fill-first/--fill-verbose."
-fi
-
-if { [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ]; } && [ "$use_copilot" != "true" ]; then
-  die "--mode/--detail require 'git pr copilot' or --copilot."
-fi
-
-if { [ "$language_explicit" = "true" ] || [ "$diff_exclude_explicit" = "true" ]; } && [ "$use_copilot" != "true" ]; then
-  die "--language/--diff-exclude require 'git pr copilot' or --copilot."
-fi
-
-if [ "$copilot_mode_explicit" = "true" ]; then
-  case "$copilot_mode" in
-    create|update|auto)
-      ;;
-    *)
-      die "Invalid --mode: $copilot_mode (use create|update|auto)"
-      ;;
-  esac
-fi
-
-if [ "$copilot_detail_explicit" = "true" ]; then
-  case "$copilot_detail" in
-    normal|verbose)
-      ;;
-    *)
-      die "Invalid --detail: $copilot_detail (use normal|verbose)"
-      ;;
-  esac
-fi
-
-if [ "$use_copilot" = "true" ] && { [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ]; }; then
-  die "--copilot cannot be combined with --title/--body/--body-file."
-fi
-
-if [ "$use_copilot" = "true" ] && { [ "$fill_explicit" = "true" ] || [ "$no_fill_explicit" = "true" ]; }; then
-  die "--copilot cannot be combined with --fill/--no-fill."
-fi
-
-if [ "$fill_explicit" = "true" ] && { [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ]; }; then
-  die "--fill/--fill-first/--fill-verbose cannot be combined with --title/--body/--body-file."
-fi
-
-if [ "$fill_explicit" = "true" ] && [ -n "$template_file" ]; then
-  die "--fill/--fill-first/--fill-verbose cannot be combined with --template."
-fi
-
-if [ "$skip_edit" = "true" ] && { [ "$use_copilot" = "true" ] || [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ] || [ "$fill_explicit" = "true" ] || [ "$no_fill_explicit" = "true" ]; }; then
-  die "--no-edit cannot be combined with options that modify the PR body/title."
-fi
-
-if [ "$skip_edit" = "true" ] && { [ "$editor" = "true" ] || [ -n "$template_file" ]; }; then
-  die "--no-edit cannot be combined with --editor/--template."
-fi
-
-if [ "$action" = "auto-merge" ]; then
-  if [ "$auto_merge_explicit" = "true" ]; then
-    die "Use 'git pr auto-merge' without --enable-auto-merge."
-  fi
-  if [ "$base_branch_explicit" = "true" ] || [ "$draft_explicit" = "true" ] || [ "$open_web_explicit" = "true" ] || \
-     [ "$use_copilot" = "true" ] || [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ] || \
-     [ "$language_explicit" = "true" ] || [ "$diff_exclude_explicit" = "true" ] || \
-     [ "$title_explicit" = "true" ] || [ "$body_explicit" = "true" ] || \
-     [ "$body_file_explicit" = "true" ] || [ "$template_file_explicit" = "true" ] || [ "$editor" = "true" ] || \
-     [ "$label_explicit" = "true" ] || [ "$reviewer_explicit" = "true" ] || [ "$assignee_explicit" = "true" ] || \
-     [ "$fill_explicit" = "true" ] || [ "$no_fill_explicit" = "true" ] || \
-     [ "$skip_edit" = "true" ]; then
-    die "auto-merge subcommand only accepts auto-merge options."
-  fi
-  if [ "$auto_merge_disable" = "true" ]; then
-    if [ "$merge_method_explicit" = "true" ] || [ "$auto_merge_delete_branch" = "true" ] || \
-       [ "$auto_merge_admin" = "true" ] || [ -n "$auto_merge_match_head" ]; then
-      die "--disable-auto-merge cannot be combined with merge options."
-    fi
-  fi
-fi
-
+handle_update_action
+validate_common_options
+validate_auto_merge_options
 if [ "$action" = "auto-merge" ]; then
   auto_merge="true"
 fi
-
-if [ "$auto_merge_disable" = "true" ] && [ "$action" != "auto-merge" ]; then
-  die "--disable-auto-merge is only supported with 'git pr auto-merge'."
-fi
-
-if [ "$auto_merge_disable" = "true" ] && [ "$auto_merge_explicit" = "true" ]; then
-  die "--disable-auto-merge cannot be combined with --enable-auto-merge."
-fi
-
-if [ "$auto_merge_match_head_explicit" = "true" ] && [ -z "$auto_merge_match_head" ]; then
-  die "--match-head-commit requires a commit SHA."
-fi
-
-if { [ "$auto_merge_delete_branch" = "true" ] || [ "$auto_merge_admin" = "true" ] || \
-     [ -n "$auto_merge_match_head" ]; } && \
-   [ "$auto_merge" != "true" ] && [ "$action" != "auto-merge" ]; then
-  die "Auto-merge options require --enable-auto-merge or 'git pr auto-merge'."
-fi
-
-case "$merge_method" in
-  merge|squash|rebase)
-    ;;
-  *)
-    die "Invalid merge method: $merge_method (use merge|squash|rebase)"
-    ;;
-esac
 
 require_cmd git
 require_cmd gh
