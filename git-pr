@@ -4,6 +4,8 @@
 set -euo pipefail
 
 GIT_PR_VERSION="0.1.0"
+COPILOT_UPDATE_START_MARKER="<!-- git-pr:copilot-update:start -->"
+COPILOT_UPDATE_END_MARKER="<!-- git-pr:copilot-update:end -->"
 cleanup_paths=()
 cleanup_trap_registered="false"
 
@@ -252,6 +254,91 @@ set_title_body_from_copilot_fallback_response() {
     }' "$response_file")
 }
 
+merge_copilot_update_body() {
+  if [ "$#" -ne 2 ]; then
+    die "Internal error: merge_copilot_update_body expects 2 arguments."
+  fi
+
+  local existing="$1"
+  local generated="$2"
+  local result=""
+  local line
+  local in_block="false"
+  local saw_start="false"
+  local saw_end="false"
+  local block_has_content="false"
+
+  append_result_line() {
+    if [ -n "$result" ]; then
+      result+=$'\n'
+    fi
+    result+="$1"
+  }
+
+  append_result_text() {
+    local text="$1"
+    local text_line
+
+    while IFS= read -r text_line || [ -n "$text_line" ]; do
+      append_result_line "$text_line"
+    done <<< "$text"
+  }
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$line" = "$COPILOT_UPDATE_START_MARKER" ]; then
+      if [ "$saw_start" = "true" ] || [ "$in_block" = "true" ]; then
+        return 1
+      fi
+      saw_start="true"
+      in_block="true"
+      append_result_line "$line"
+      continue
+    fi
+
+    if [ "$line" = "$COPILOT_UPDATE_END_MARKER" ]; then
+      if [ "$in_block" != "true" ] || [ "$saw_end" = "true" ]; then
+        return 1
+      fi
+      saw_end="true"
+      in_block="false"
+      if [ "$block_has_content" = "true" ] && [ -n "$generated" ]; then
+        append_result_line ""
+      fi
+      append_result_text "$generated"
+      append_result_line "$line"
+      continue
+    fi
+
+    append_result_line "$line"
+    if [ "$in_block" = "true" ]; then
+      block_has_content="true"
+    fi
+  done <<< "$existing"
+
+  if [ "$in_block" = "true" ] || [ "$saw_start" != "$saw_end" ]; then
+    return 1
+  fi
+
+  if [ "$saw_start" != "true" ]; then
+    if [ -n "$result" ]; then
+      append_result_line ""
+    fi
+    append_result_line "$COPILOT_UPDATE_START_MARKER"
+    append_result_text "$generated"
+    append_result_line "$COPILOT_UPDATE_END_MARKER"
+  fi
+
+  printf '%s' "$result"
+}
+
+validate_copilot_update_markers() {
+  if [ "$#" -ne 1 ]; then
+    die "Internal error: validate_copilot_update_markers expects 1 argument."
+  fi
+
+  merge_copilot_update_body "$1" "" >/dev/null
+}
+
 generate_title_body_with_copilot() {
   local max_bytes="${GIT_PR_COPILOT_DIFF_MAX_BYTES:-20000}"
   if ! [[ "$max_bytes" =~ ^[0-9]+$ ]]; then
@@ -327,9 +414,10 @@ generate_title_body_with_copilot() {
   fi
   if [ "$copilot_update_effective" = "true" ]; then
     existing_note=$(cat <<EOF
-- You are updating an existing PR body. Preserve existing content and add missing details based on the diff.
-- Avoid removing or rewriting existing content unless it is clearly contradicted by the diff.
-- Avoid duplicate content; append or expand sections as needed.
+- You are generating an update section for an existing PR body.
+- Return only the new or changed details that should go in the generated update section.
+- Do not repeat the full existing PR body.
+- Avoid duplicate content.
 
 Current PR title:
 $copilot_existing_title
@@ -1445,6 +1533,7 @@ body_file=""
 body_file_explicit="false"
 copilot_existing_title=""
 copilot_existing_body=""
+copilot_existing_body_loaded="false"
 copilot_update_effective="false"
 copilot_mode_effective="auto"
 template_resolved="false"
@@ -1795,6 +1884,9 @@ if [ "$use_copilot" = "true" ]; then
   if [ "$copilot_mode_effective" = "update" ] && [ -z "$pr_number" ]; then
     die "--mode=update requires an existing PR. Use --mode=create."
   fi
+  if [ "$copilot_mode_effective" = "create" ] && [ -n "$pr_number" ]; then
+    die "--mode=create requires no existing PR. Use --mode=update."
+  fi
   if [ "$copilot_mode_effective" = "update" ]; then
     copilot_update_effective="true"
   else
@@ -1815,6 +1907,12 @@ if [ -n "$pr_number" ]; then
   fi
   if [ "$base_branch_explicit" = "true" ] && [ "$base_branch" = "$current_branch" ]; then
     die "You are on '$base_branch'. Create a feature branch first."
+  fi
+  if [ "$copilot_update_effective" = "true" ]; then
+    copilot_existing_body=$(get_pr_field "$pr_number" body)
+    copilot_existing_body_loaded="true"
+    validate_copilot_update_markers "$copilot_existing_body" || \
+      die "Existing PR body has an invalid git-pr Copilot update marker block."
   fi
 else
   resolve_create_base_branch
@@ -1895,7 +1993,10 @@ if [ -n "$pr_number" ]; then
       fi
       if [ "$copilot_update_effective" = "true" ]; then
         copilot_existing_title=$(get_pr_field "$pr_number" title)
-        copilot_existing_body=$(get_pr_field "$pr_number" body)
+        if [ "$copilot_existing_body_loaded" != "true" ]; then
+          copilot_existing_body=$(get_pr_field "$pr_number" body)
+          copilot_existing_body_loaded="true"
+        fi
         update_title="false"
         update_body="true"
       else
@@ -1909,6 +2010,9 @@ if [ -n "$pr_number" ]; then
           copilot_fallback
           update_title="false"
           update_body="false"
+        elif [ "$copilot_update_effective" = "true" ]; then
+          body=$(merge_copilot_update_body "$copilot_existing_body" "$body") || \
+            die "Existing PR body has an invalid git-pr Copilot update marker block."
         fi
       else
         copilot_fallback

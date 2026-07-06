@@ -24,6 +24,30 @@ FAKE_COPILOT
   chmod 755 "$GIT_PR_FAKE_BIN/copilot"
 }
 
+create_backslash_copilot() {
+  cat > "$GIT_PR_FAKE_BIN/copilot" <<'FAKE_COPILOT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+{
+  printf 'copilot'
+  for arg in "$@"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n'
+} >> "$GIT_PR_FAKE_LOG"
+
+cat <<'COPILOT_RESPONSE'
+__GIT_PR_TITLE__
+Generated title
+__GIT_PR_BODY__
+Path C:\tmp\new and literal \n escape
+__GIT_PR_END__
+COPILOT_RESPONSE
+FAKE_COPILOT
+  chmod 755 "$GIT_PR_FAKE_BIN/copilot"
+}
+
 hide_host_copilot() {
   local tool_bin="$BATS_TEST_TMPDIR/no-host-copilot-bin"
   mkdir -p "$tool_bin"
@@ -54,8 +78,69 @@ hide_host_copilot() {
     "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=auto
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr edit 123 --repo example/repo --body Generated\\ body"
+  assert_log_contains "gh pr edit 123 --repo example/repo --body"
+  printf '%s' $'Already written\n\n<!-- git-pr:copilot-update:start -->\nGenerated body\n<!-- git-pr:copilot-update:end -->' \
+    > "$BATS_TEST_TMPDIR/expected-body.md"
+  diff -u "$BATS_TEST_TMPDIR/expected-body.md" "$GIT_PR_FAKE_LOG.pr-edit-body"
   assert_log_not_contains "gh pr edit 123 --repo example/repo --title"
+}
+
+@test "copilot update appends inside existing marker block in place" {
+  create_fake_copilot
+
+  run env \
+    GIT_PR_FAKE_PR_NUMBER=123 \
+    GIT_PR_FAKE_PR_TITLE="Existing title" \
+    GIT_PR_FAKE_PR_BODY=$'Manual intro\n\n<!-- git-pr:copilot-update:start -->\nOld generated body\n<!-- git-pr:copilot-update:end -->\n\nManual tail' \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=update
+
+  [ "$status" -eq 0 ]
+  printf '%s' $'Manual intro\n\n<!-- git-pr:copilot-update:start -->\nOld generated body\n\nGenerated body\n<!-- git-pr:copilot-update:end -->\n\nManual tail' \
+    > "$BATS_TEST_TMPDIR/expected-body.md"
+  diff -u "$BATS_TEST_TMPDIR/expected-body.md" "$GIT_PR_FAKE_LOG.pr-edit-body"
+}
+
+@test "copilot update preserves literal backslashes in generated body" {
+  create_backslash_copilot
+
+  run env \
+    GIT_PR_FAKE_PR_NUMBER=123 \
+    GIT_PR_FAKE_PR_TITLE="Existing title" \
+    GIT_PR_FAKE_PR_BODY="Already written" \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=update
+
+  [ "$status" -eq 0 ]
+  printf '%s' $'Already written\n\n<!-- git-pr:copilot-update:start -->\nPath C:\\tmp\\new and literal \\n escape\n<!-- git-pr:copilot-update:end -->' \
+    > "$BATS_TEST_TMPDIR/expected-body.md"
+  diff -u "$BATS_TEST_TMPDIR/expected-body.md" "$GIT_PR_FAKE_LOG.pr-edit-body"
+}
+
+@test "copilot update rejects malformed marker block before edit" {
+  create_fake_copilot
+
+  run env \
+    GIT_PR_FAKE_PR_NUMBER=123 \
+    GIT_PR_FAKE_PR_TITLE="Existing title" \
+    GIT_PR_FAKE_PR_BODY=$'Manual intro\n\n<!-- git-pr:copilot-update:start -->\nOld generated body' \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=update
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Existing PR body has an invalid git-pr Copilot update marker block."* ]]
+  assert_no_git_push
+  assert_no_command_logged "copilot"
+  assert_log_not_contains "gh pr edit 123"
+}
+
+@test "copilot create mode rejects existing PR" {
+  create_fake_copilot
+  export GIT_PR_FAKE_PR_NUMBER=123
+
+  run "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=create
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: --mode=create requires no existing PR. Use --mode=update."* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr edit"
 }
 
 @test "copilot update mode without an existing PR fails before push" {
@@ -97,7 +182,9 @@ hide_host_copilot() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARN: --copilot-update is deprecated. Use 'git pr copilot --mode=update'."* ]]
-  assert_log_contains "gh pr edit 123 --repo example/repo --body Generated\\ body"
+  assert_log_contains "gh pr edit 123 --repo example/repo --body"
+  grep -F "Already written" "$GIT_PR_FAKE_LOG.pr-edit-body"
+  grep -F "Generated body" "$GIT_PR_FAKE_LOG.pr-edit-body"
   assert_log_not_contains "gh pr edit 123 --repo example/repo --title"
 }
 
