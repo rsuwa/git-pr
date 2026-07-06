@@ -58,6 +58,38 @@ hide_host_copilot() {
   export PATH="$GIT_PR_FAKE_BIN:$BATS_TEST_DIRNAME/..:$tool_bin"
 }
 
+create_selective_chmod() {
+  local real_chmod
+  real_chmod=$(command -v chmod)
+  export GIT_PR_REAL_CHMOD="$real_chmod"
+  cat > "$GIT_PR_FAKE_BIN/chmod" <<'FAKE_CHMOD'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${GIT_PR_FAKE_CHMOD_FAIL_PRIVATE:-false}" = "true" ] && [ "${1-}" = "700" ]; then
+  exit 1
+fi
+if [ "${1-}" = "700" ]; then
+  count_file="$GIT_PR_FAKE_LOG.chmod-private-count"
+  count=0
+  if [ -f "$count_file" ]; then
+    count=$(cat "$count_file")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$count_file"
+  if [ -n "${GIT_PR_FAKE_CHMOD_FAIL_PRIVATE_AFTER:-}" ] && [ "$count" -gt "$GIT_PR_FAKE_CHMOD_FAIL_PRIVATE_AFTER" ]; then
+    exit 1
+  fi
+fi
+if [ -n "${GIT_PR_FAKE_CHMOD_FAIL_PATH:-}" ] && [ "${2-}" = "$GIT_PR_FAKE_CHMOD_FAIL_PATH" ]; then
+  exit 1
+fi
+
+exec "$GIT_PR_REAL_CHMOD" "$@"
+FAKE_CHMOD
+  "$real_chmod" 755 "$GIT_PR_FAKE_BIN/chmod"
+}
+
 @test "copilot auto mode creates a new PR when none exists" {
   create_fake_copilot
 
@@ -230,6 +262,7 @@ hide_host_copilot() {
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: GIT_PR_COPILOT_DIFF_MAX_BYTES must be an integer."* ]]
+  assert_no_git_push
   assert_no_command_logged "copilot"
   assert_log_not_contains "gh pr create"
 }
@@ -273,4 +306,75 @@ hide_host_copilot() {
   grep -F "Input:" "$base.prompt"
   grep -F "diff --git a/git-pr b/git-pr" "$base.diff"
   grep -F "unparseable copilot response" "$base.response"
+}
+
+@test "copilot refuses to build prompt when temporary directory cannot be secured" {
+  create_fake_copilot
+  create_selective_chmod
+  tmp_root="$BATS_TEST_TMPDIR/private-tmp"
+  mkdir -p "$tmp_root"
+
+  run env \
+    TMPDIR="$tmp_root" \
+    GIT_PR_FAKE_CHMOD_FAIL_PRIVATE=true \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to secure temporary directory:"* ]]
+  assert_no_git_push
+  assert_no_command_logged "copilot"
+  assert_log_not_contains "gh pr create"
+  [ -z "$(find "$tmp_root" -mindepth 1 -maxdepth 1 -name 'git-pr.*' -print -quit)" ]
+}
+
+@test "copilot reuses preflighted private temp directory after push" {
+  create_fake_copilot
+  create_selective_chmod
+
+  run env \
+    GIT_PR_FAKE_CHMOD_FAIL_PRIVATE_AFTER=1 \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GIT_PR_FAKE_LOG.chmod-private-count")" = "1" ]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
+  assert_log_contains "copilot -s --no-custom-instructions --stream off -p"
+  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Generated\\ title --body Generated\\ body"
+}
+
+@test "copilot debug log is skipped when log directory cannot be secured" {
+  create_malformed_copilot
+  create_selective_chmod
+  log_dir="$BATS_TEST_TMPDIR/copilot-logs"
+
+  run env \
+    GIT_PR_COPILOT_LOG_DIR="$log_dir" \
+    GIT_PR_COPILOT_LOG_CONTENT=1 \
+    GIT_PR_FAKE_CHMOD_FAIL_PATH="$log_dir" \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Skipping Copilot debug log because directory could not be secured: $log_dir"* ]]
+  [ -z "$(find "$log_dir" -type f -print -quit 2>/dev/null)" ]
+  assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill"
+}
+
+@test "copilot update skips insecure debug log and preserves existing body" {
+  create_malformed_copilot
+  create_selective_chmod
+  log_dir="$BATS_TEST_TMPDIR/copilot-logs"
+
+  run env \
+    GIT_PR_COPILOT_LOG_DIR="$log_dir" \
+    GIT_PR_COPILOT_LOG_CONTENT=1 \
+    GIT_PR_FAKE_CHMOD_FAIL_PATH="$log_dir" \
+    GIT_PR_FAKE_PR_NUMBER=123 \
+    GIT_PR_FAKE_PR_BODY="Already written" \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=update
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Skipping Copilot debug log because directory could not be secured: $log_dir"* ]]
+  [[ "$output" == *"WARN: Copilot failed; leaving existing PR title/body unchanged."* ]]
+  [ -z "$(find "$log_dir" -type f -print -quit 2>/dev/null)" ]
+  assert_log_not_contains "gh pr edit 123"
 }

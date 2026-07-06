@@ -8,6 +8,7 @@ COPILOT_UPDATE_START_MARKER="<!-- git-pr:copilot-update:start -->"
 COPILOT_UPDATE_END_MARKER="<!-- git-pr:copilot-update:end -->"
 cleanup_paths=()
 cleanup_trap_registered="false"
+copilot_private_temp_dir=""
 
 usage() {
   cat <<'USAGE'
@@ -140,9 +141,20 @@ log_copilot_debug() {
   local response_text="$6"
   local log_content="$7"
   local base
+  local log_dir_existed="false"
 
-  mkdir -p "$log_dir"
-  chmod 700 "$log_dir" 2>/dev/null || true
+  [ -e "$log_dir" ] && log_dir_existed="true"
+  if ! mkdir -p "$log_dir"; then
+    log_warn "Skipping Copilot debug log because directory could not be created: $log_dir"
+    return 0
+  fi
+  if ! chmod 700 "$log_dir" 2>/dev/null; then
+    if [ "$log_dir_existed" != "true" ]; then
+      rmdir "$log_dir" 2>/dev/null || true
+    fi
+    log_warn "Skipping Copilot debug log because directory could not be secured: $log_dir"
+    return 0
+  fi
   base="$log_dir/copilot-$log_tag"
   (
     umask 077
@@ -339,11 +351,30 @@ validate_copilot_update_markers() {
   merge_copilot_update_body "$1" "" >/dev/null
 }
 
-generate_title_body_with_copilot() {
-  local max_bytes="${GIT_PR_COPILOT_DIFF_MAX_BYTES:-20000}"
+validate_copilot_diff_max_bytes() {
+  local max_bytes="$1"
+
   if ! [[ "$max_bytes" =~ ^[0-9]+$ ]]; then
     die "GIT_PR_COPILOT_DIFF_MAX_BYTES must be an integer."
   fi
+}
+
+ensure_copilot_private_temp_available() {
+  local temp_dir
+
+  if [ -n "$copilot_private_temp_dir" ]; then
+    return 0
+  fi
+
+  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-pr.XXXXXX") || die "Failed to create temporary directory."
+  register_cleanup_path "$temp_dir"
+  chmod 700 "$temp_dir" 2>/dev/null || die "Failed to secure temporary directory: $temp_dir"
+  copilot_private_temp_dir="$temp_dir"
+}
+
+generate_title_body_with_copilot() {
+  local max_bytes="${GIT_PR_COPILOT_DIFF_MAX_BYTES:-20000}"
+  validate_copilot_diff_max_bytes "$max_bytes"
 
   local -a diff_pathspec
   diff_pathspec=(".")
@@ -357,9 +388,14 @@ generate_title_body_with_copilot() {
   fi
 
   local temp_dir
-  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-pr.XXXXXX") || die "Failed to create temporary directory."
-  chmod 700 "$temp_dir" 2>/dev/null || true
-  register_cleanup_path "$temp_dir"
+  if [ -n "$copilot_private_temp_dir" ]; then
+    temp_dir="$copilot_private_temp_dir"
+  else
+    temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-pr.XXXXXX") || die "Failed to create temporary directory."
+    register_cleanup_path "$temp_dir"
+    chmod 700 "$temp_dir" 2>/dev/null || die "Failed to secure temporary directory: $temp_dir"
+    copilot_private_temp_dir="$temp_dir"
+  fi
 
   local diff_file
   diff_file="$temp_dir/diff.txt"
@@ -513,9 +549,7 @@ can_run_copilot_generation() {
   fi
 
   local max_bytes="${GIT_PR_COPILOT_DIFF_MAX_BYTES:-20000}"
-  if ! [[ "$max_bytes" =~ ^[0-9]+$ ]]; then
-    die "GIT_PR_COPILOT_DIFF_MAX_BYTES must be an integer."
-  fi
+  validate_copilot_diff_max_bytes "$max_bytes"
 
   return 0
 }
@@ -2088,6 +2122,11 @@ fi
 
 if [ -z "$pr_number" ] && [ "$commit_count" -eq 0 ]; then
   die "No commits to open a PR (branch is up to date with $base_branch)."
+fi
+
+if [ "$use_copilot" = "true" ] && command -v copilot >/dev/null 2>&1; then
+  validate_copilot_diff_max_bytes "${GIT_PR_COPILOT_DIFF_MAX_BYTES:-20000}"
+  ensure_copilot_private_temp_available
 fi
 
 if ! git -C "$repo_root" diff --quiet || ! git -C "$repo_root" diff --cached --quiet; then
