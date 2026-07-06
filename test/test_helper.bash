@@ -274,7 +274,8 @@ case "${1-} ${2-}" in
       printf 'fake gh: pr list missing or unexpected --state: %s\n' "$state" >&2
       exit 1
     fi
-    if [ "$json_fields" != "number,headRepositoryOwner" ]; then
+    if ! printf '%s\n' "$json_fields" | grep -F 'number' >/dev/null || \
+       ! printf '%s\n' "$json_fields" | grep -F 'headRepositoryOwner' >/dev/null; then
       printf 'fake gh: pr list missing or unexpected --json: %s\n' "$json_fields" >&2
       exit 1
     fi
@@ -369,6 +370,24 @@ assert_log_not_contains() {
   fi
 }
 
+assert_no_git_push() {
+  if grep -E '^git( .*)? push( |$)' "$GIT_PR_FAKE_LOG" >/dev/null; then
+    printf 'Expected no git push call.\n\nActual log:\n' >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  fi
+}
+
+assert_no_command_logged() {
+  local command_name="$1"
+
+  if grep -E "^$command_name( |$)" "$GIT_PR_FAKE_LOG" >/dev/null; then
+    printf 'Expected no %s command call.\n\nActual log:\n' "$command_name" >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  fi
+}
+
 assert_log_order() {
   local first="$1"
   local second="$2"
@@ -395,10 +414,27 @@ assert_log_line_contains_all() {
     return 1
   }
   for expected in "$@"; do
-    if ! printf '%s\n' "$line" | grep -F "$expected" >/dev/null; then
+    if ! printf '%s\n' "$line" | grep -F -- "$expected" >/dev/null; then
       printf 'Expected log line:\n%s\n\nto contain:\n%s\n\nActual log:\n' "$line" "$expected" >&2
       cat "$GIT_PR_FAKE_LOG" >&2
       return 1
     fi
   done
+}
+
+assert_log_line_not_contains() {
+  local prefix="$1"
+  local unexpected="$2"
+  local line
+
+  line=$(grep -F "$prefix" "$GIT_PR_FAKE_LOG" | head -n 1) || {
+    printf 'Expected log line with prefix:\n%s\n\nActual log:\n' "$prefix" >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  }
+  if printf '%s\n' "$line" | grep -F -- "$unexpected" >/dev/null; then
+    printf 'Expected log line:\n%s\n\nnot to contain:\n%s\n\nActual log:\n' "$line" "$unexpected" >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  fi
 }

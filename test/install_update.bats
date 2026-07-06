@@ -32,6 +32,9 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$output" ] || exit 1
+if [ -n "${GIT_PR_TEST_CURL_LOG:-}" ]; then
+  printf 'curl %s\n' "$url" >> "$GIT_PR_TEST_CURL_LOG"
+fi
 case "$url" in
   */SHA256SUMS)
     cp "$GIT_PR_TEST_SUMS" "$output"
@@ -137,24 +140,30 @@ sha256_of() {
 
 @test "install verifies release SHA256SUMS by default" {
   install_dir="$BATS_TEST_TMPDIR/install"
+  curl_log="$BATS_TEST_TMPDIR/curl.log"
 
   run env \
     -u GIT_PR_INSTALL_SHA256 \
     -u GIT_PR_CHECKSUM_URL \
+    GIT_PR_TEST_CURL_LOG="$curl_log" \
     GIT_PR_INSTALL_URL="https://example.invalid/releases/latest/download/git-pr" \
     GIT_PR_INSTALL_DIR="$install_dir" \
     "$BATS_TEST_DIRNAME/../install.sh"
 
   [ "$status" -eq 0 ]
   [ -x "$install_dir/git-pr" ]
+  grep -F "curl https://example.invalid/releases/latest/download/git-pr" "$curl_log"
+  grep -F "curl https://example.invalid/releases/latest/download/SHA256SUMS" "$curl_log"
 }
 
 @test "install verifies matching GIT_PR_INSTALL_SHA256" {
   expected="$(sha256_of "$GIT_PR_TEST_DOWNLOAD")"
   install_dir="$BATS_TEST_TMPDIR/install"
+  curl_log="$BATS_TEST_TMPDIR/curl.log"
 
   run env \
     -u GIT_PR_CHECKSUM_URL \
+    GIT_PR_TEST_CURL_LOG="$curl_log" \
     GIT_PR_INSTALL_URL="https://example.invalid/git-pr" \
     GIT_PR_INSTALL_DIR="$install_dir" \
     GIT_PR_INSTALL_SHA256="$expected" \
@@ -164,6 +173,8 @@ sha256_of() {
   [ -x "$install_dir/git-pr" ]
   run "$install_dir/git-pr"
   [ "$output" = "downloaded git-pr" ]
+  grep -F "curl https://example.invalid/git-pr" "$curl_log"
+  ! grep -F "SHA256SUMS" "$curl_log"
 }
 
 @test "install checksum mismatch preserves existing executable" {
@@ -190,25 +201,31 @@ OLD
 @test "update verifies release SHA256SUMS by default" {
   cp "$BATS_TEST_DIRNAME/../git-pr" "$GIT_PR_TEST_BIN/git-pr"
   chmod 755 "$GIT_PR_TEST_BIN/git-pr"
+  curl_log="$BATS_TEST_TMPDIR/curl.log"
 
   run env \
     -u GIT_PR_UPDATE_SHA256 \
     -u GIT_PR_UPDATE_CHECKSUM_URL \
+    GIT_PR_TEST_CURL_LOG="$curl_log" \
     GIT_PR_UPDATE_URL="https://example.invalid/releases/latest/download/git-pr" \
     "$GIT_PR_TEST_BIN/git-pr" update
 
   [ "$status" -eq 0 ]
   run "$GIT_PR_TEST_BIN/git-pr"
   [ "$output" = "downloaded git-pr" ]
+  grep -F "curl https://example.invalid/releases/latest/download/git-pr" "$curl_log"
+  grep -F "curl https://example.invalid/releases/latest/download/SHA256SUMS" "$curl_log"
 }
 
 @test "update verifies matching GIT_PR_UPDATE_SHA256" {
   cp "$BATS_TEST_DIRNAME/../git-pr" "$GIT_PR_TEST_BIN/git-pr"
   chmod 755 "$GIT_PR_TEST_BIN/git-pr"
   expected="$(sha256_of "$GIT_PR_TEST_DOWNLOAD")"
+  curl_log="$BATS_TEST_TMPDIR/curl.log"
 
   run env \
     -u GIT_PR_UPDATE_CHECKSUM_URL \
+    GIT_PR_TEST_CURL_LOG="$curl_log" \
     GIT_PR_UPDATE_URL="https://example.invalid/git-pr" \
     GIT_PR_UPDATE_SHA256="$expected" \
     "$GIT_PR_TEST_BIN/git-pr" update
@@ -216,6 +233,8 @@ OLD
   [ "$status" -eq 0 ]
   run "$GIT_PR_TEST_BIN/git-pr"
   [ "$output" = "downloaded git-pr" ]
+  grep -F "curl https://example.invalid/git-pr" "$curl_log"
+  ! grep -F "SHA256SUMS" "$curl_log"
 }
 
 @test "update checksum mismatch preserves existing executable" {

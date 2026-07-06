@@ -27,7 +27,7 @@ run_git_pr_expect_error() {
     return 1
   }
 
-  assert_log_not_contains "git push"
+  assert_no_git_push
   assert_log_not_contains "gh pr create"
   assert_log_not_contains "gh pr edit"
   assert_log_not_contains "gh pr merge"

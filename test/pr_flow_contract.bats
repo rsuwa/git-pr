@@ -7,92 +7,13 @@ setup() {
   GIT_PR="$BATS_TEST_DIRNAME/../git-pr"
 }
 
-force_gh_repo_view_failure() {
-  mv "$GIT_PR_FAKE_BIN/gh" "$GIT_PR_FAKE_BIN/gh-real"
-  cat > "$GIT_PR_FAKE_BIN/gh" <<'FAKE_GH'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [ "${1-} ${2-}" = "repo view" ]; then
-  {
-    printf 'gh'
-    for arg in "$@"; do
-      printf ' %q' "$arg"
-    done
-    printf '\n'
-  } >> "$GIT_PR_FAKE_LOG"
-  exit 1
-fi
-
-exec "$GIT_PR_FAKE_BIN/gh-real" "$@"
-FAKE_GH
-  chmod 755 "$GIT_PR_FAKE_BIN/gh"
-}
-
-force_origin_head_failure() {
-  mv "$GIT_PR_FAKE_BIN/git" "$GIT_PR_FAKE_BIN/git-real"
-  cat > "$GIT_PR_FAKE_BIN/git" <<'FAKE_GIT'
-#!/usr/bin/env bash
-set -euo pipefail
-
-original_args=("$@")
-args=("$@")
-if [ "${args[0]-}" = "-C" ]; then
-  args=("${args[@]:2}")
-fi
-
-last_index=$((${#args[@]} - 1))
-if [ "${args[0]-}" = "symbolic-ref" ] && [ "${args[$last_index]-}" = "refs/remotes/origin/HEAD" ]; then
-  {
-    printf 'git'
-    for arg in "${original_args[@]}"; do
-      printf ' %q' "$arg"
-    done
-    printf '\n'
-  } >> "$GIT_PR_FAKE_LOG"
-  exit 1
-fi
-
-exec "$GIT_PR_FAKE_BIN/git-real" "$@"
-FAKE_GIT
-  chmod 755 "$GIT_PR_FAKE_BIN/git"
-}
-
-make_worktree_dirty() {
-  mv "$GIT_PR_FAKE_BIN/git" "$GIT_PR_FAKE_BIN/git-real"
-  cat > "$GIT_PR_FAKE_BIN/git" <<'FAKE_GIT'
-#!/usr/bin/env bash
-set -euo pipefail
-
-original_args=("$@")
-args=("$@")
-if [ "${args[0]-}" = "-C" ]; then
-  args=("${args[@]:2}")
-fi
-
-if [ "${args[0]-}" = "diff" ] && [ "${args[1]-}" = "--quiet" ] && [ "${#args[@]}" -eq 2 ]; then
-  {
-    printf 'git'
-    for arg in "${original_args[@]}"; do
-      printf ' %q' "$arg"
-    done
-    printf '\n'
-  } >> "$GIT_PR_FAKE_LOG"
-  exit 1
-fi
-
-exec "$GIT_PR_FAKE_BIN/git-real" "$@"
-FAKE_GIT
-  chmod 755 "$GIT_PR_FAKE_BIN/git"
-}
-
 @test "explicit base is used without default branch discovery" {
   run "$GIT_PR" --base develop
 
   [ "$status" -eq 0 ]
   assert_log_not_contains "branch.feature.gh-merge-base"
   assert_log_not_contains "gh repo view"
-  assert_log_contains "gh pr create --repo example/repo --base develop --head feature --fill"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base develop" "--head feature" "--fill"
 }
 
 @test "branch gh-merge-base config wins over repo default" {
@@ -103,7 +24,7 @@ FAKE_GIT
   [ "$status" -eq 0 ]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT config --get branch.feature.gh-merge-base"
   assert_log_not_contains "gh repo view"
-  assert_log_contains "gh pr create --repo example/repo --base integration --head feature --fill"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base integration" "--head feature" "--fill"
 }
 
 @test "repo default branch is used when no branch merge base is configured" {
@@ -113,30 +34,30 @@ FAKE_GIT
 
   [ "$status" -eq 0 ]
   assert_log_contains "gh repo view --repo example/repo --json defaultBranchRef --jq .defaultBranchRef.name"
-  assert_log_contains "gh pr create --repo example/repo --base trunk --head feature --fill"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base trunk" "--head feature" "--fill"
 }
 
 @test "origin HEAD is used when repo default branch lookup fails" {
   export GIT_PR_FAKE_DEFAULT_BRANCH=stable
-  force_gh_repo_view_failure
+  export GIT_PR_FAKE_REPO_VIEW_FAIL=true
 
   run "$GIT_PR"
 
   [ "$status" -eq 0 ]
   assert_log_contains "gh repo view --repo example/repo --json defaultBranchRef --jq .defaultBranchRef.name"
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT symbolic-ref -q --short refs/remotes/origin/HEAD"
-  assert_log_contains "gh pr create --repo example/repo --base stable --head feature --fill"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base stable" "--head feature" "--fill"
 }
 
 @test "missing base fails before pushing" {
-  force_gh_repo_view_failure
-  force_origin_head_failure
+  export GIT_PR_FAKE_REPO_VIEW_FAIL=true
+  export GIT_PR_FAKE_HAS_ORIGIN_HEAD=false
 
   run "$GIT_PR"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: Base branch not specified and default branch could not be determined."* ]]
-  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT push"
+  assert_no_git_push
   assert_log_not_contains "gh pr create"
 }
 
@@ -144,21 +65,21 @@ FAKE_GIT
   run "$GIT_PR" --fill-first
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill-first"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--fill-first"
 }
 
 @test "create with --fill-verbose passes through fill-verbose mode" {
   run "$GIT_PR" --fill-verbose
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill-verbose"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--fill-verbose"
 }
 
 @test "create with --no-fill generates explicit title and body" {
   run "$GIT_PR" --no-fill
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Test\\ title --body -\\ Test\\ commit"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--title Test\\ title" "--body -\\ Test\\ commit"
   assert_log_not_contains " --fill"
 }
 
@@ -166,7 +87,7 @@ FAKE_GIT
   run "$GIT_PR" --title "Manual title" --body "Manual body"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Manual\\ title --body Manual\\ body"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--title Manual\\ title" "--body Manual\\ body"
   assert_log_not_contains " --fill"
 }
 
@@ -177,7 +98,7 @@ FAKE_GIT
   run "$GIT_PR" --title "File title" --body-file "$body_file"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title File\\ title --body-file $body_file"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--title File\\ title" "--body-file $body_file"
   assert_log_not_contains " --fill"
 }
 
@@ -185,7 +106,7 @@ FAKE_GIT
   run "$GIT_PR" --title "Stdin title" --body-file -
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Stdin\\ title --body-file -"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--title Stdin\\ title" "--body-file -"
   assert_log_not_contains " --fill"
 }
 
@@ -195,7 +116,7 @@ FAKE_GIT
   run "$GIT_PR" --template pull_request_template.md
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Test\\ title --template $GIT_PR_FAKE_REPO_ROOT/pull_request_template.md"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--title Test\\ title" "--template $GIT_PR_FAKE_REPO_ROOT/pull_request_template.md"
   assert_log_not_contains " --fill"
 }
 
@@ -203,15 +124,15 @@ FAKE_GIT
   run "$GIT_PR" --editor --draft
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --draft --editor --fill"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--draft" "--editor" "--fill"
 }
 
 @test "create with web opens the created PR after creation" {
   run "$GIT_PR" --web
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill"
-  assert_log_not_contains "gh pr create --repo example/repo --base main --head feature --fill --web"
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--fill"
+  assert_log_line_not_contains "gh pr create" "--web"
   assert_log_contains "gh pr view 1 --repo example/repo --web"
   assert_log_order "gh pr create --repo example/repo --base main --head feature --fill" "gh pr view 1 --repo example/repo --web"
 }
@@ -221,7 +142,7 @@ FAKE_GIT
 
   [ "$status" -eq 0 ]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create --repo example/repo --base main --head feature --fill"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
 }
 
 @test "existing PR updates explicit title and body after push" {
@@ -230,8 +151,8 @@ FAKE_GIT
   run "$GIT_PR" --title "Updated title" --body "Updated body"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr edit 123 --repo example/repo --title Updated\\ title --body Updated\\ body"
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr edit 123 --repo example/repo --title Updated\\ title --body Updated\\ body"
+  assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--title Updated\\ title" "--body Updated\\ body"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr edit 123"
 }
 
 @test "existing PR updates body file only" {
@@ -242,7 +163,7 @@ FAKE_GIT
   run "$GIT_PR" --body-file "$body_file"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr edit 123 --repo example/repo --body-file $body_file"
+  assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body-file $body_file"
 }
 
 @test "existing PR explicit fill replaces a non-empty body" {
@@ -252,7 +173,7 @@ FAKE_GIT
   run "$GIT_PR" --fill
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh pr edit 123 --repo example/repo --body -\\ Test\\ commit"
+  assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body -\\ Test\\ commit"
 }
 
 @test "existing PR explicit no-fill leaves title and body unchanged" {
@@ -267,14 +188,14 @@ FAKE_GIT
 }
 
 @test "dirty worktree emits warning and still pushes before create" {
-  make_worktree_dirty
+  export GIT_PR_FAKE_WORKTREE_DIRTY=true
 
   run "$GIT_PR"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARN: Working tree has uncommitted changes. They won't be included in the PR."* ]]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create --repo example/repo --base main --head feature --fill"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
 }
 
 @test "existing upstream uses plain git push" {
@@ -285,5 +206,5 @@ FAKE_GIT
   [ "$status" -eq 0 ]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push"
   assert_log_not_contains "push -u origin HEAD"
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push" "gh pr create --repo example/repo --base main --head feature --fill"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push" "gh pr create"
 }

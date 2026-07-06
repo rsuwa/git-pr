@@ -65,7 +65,7 @@ hide_host_copilot() {
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: --mode=update requires an existing PR. Use --mode=create."* ]]
-  assert_log_not_contains "git push"
+  assert_no_git_push
   assert_log_not_contains "gh pr create"
 }
 
@@ -132,6 +132,7 @@ hide_host_copilot() {
   [ "$status" -eq 0 ]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT diff --quiet origin/main...HEAD -- . :\\(exclude\\)docs/\\*\\* :\\(exclude\\)generated/file"
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT diff --stat origin/main...HEAD -- . :\\(exclude\\)docs/\\*\\* :\\(exclude\\)generated/file"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT diff origin/main...HEAD -- . :\\(exclude\\)docs/\\*\\* :\\(exclude\\)generated/file"
 }
 
 @test "invalid copilot diff max bytes fails before copilot invocation" {
@@ -141,7 +142,7 @@ hide_host_copilot() {
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: GIT_PR_COPILOT_DIFF_MAX_BYTES must be an integer."* ]]
-  assert_log_not_contains "copilot -s"
+  assert_no_command_logged "copilot"
   assert_log_not_contains "gh pr create"
 }
 
