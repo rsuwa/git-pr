@@ -35,8 +35,5 @@ setup() {
   [[ "$output" == *"--no-edit                Do not edit existing PR title/body; metadata/base may update"* ]]
   [[ "$output" == *"--fill                   Create: gh fill; existing PR: replace body from commits"* ]]
   [[ "$output" == *"--admin                  Rejected with auto-merge"* ]]
-  [[ "$output" == *"--copilot                (deprecated)"* ]]
-  [[ "$output" == *"--copilot-verbose        (deprecated)"* ]]
-  [[ "$output" == *"--copilot-update         (deprecated)"* ]]
-  [[ "$output" == *"--auto-merge             (deprecated)"* ]]
+  [[ "$output" != *"(deprecated)"* ]]
 }

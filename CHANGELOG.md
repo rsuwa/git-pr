@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Remove deprecated aliases: `git pr merge`, `--copilot`, `--copilot-verbose`,
+  `--copilot-update`, and `--auto-merge`.
+
 ## 0.2.1 - 2026-07-06
 
 - Redact credentials and query strings in more install/update/remote failure

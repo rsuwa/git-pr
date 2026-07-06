@@ -187,40 +187,6 @@ FAKE_CHMOD
   assert_log_not_contains "gh pr create"
 }
 
-@test "deprecated copilot flags warn and map to copilot modes" {
-  create_fake_copilot
-
-  run "$BATS_TEST_DIRNAME/../git-pr" --copilot
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"WARN: --copilot is deprecated. Use 'git pr copilot --mode=create'."* ]]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Generated\\ title --body Generated\\ body"
-
-  rm -f "$GIT_PR_FAKE_LOG.created-pr"
-  : > "$GIT_PR_FAKE_LOG"
-
-  run "$BATS_TEST_DIRNAME/../git-pr" --copilot-verbose
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"WARN: --copilot-verbose is deprecated. Use 'git pr copilot --detail=verbose'."* ]]
-  assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Generated\\ title --body Generated\\ body"
-
-  rm -f "$GIT_PR_FAKE_LOG.created-pr"
-  : > "$GIT_PR_FAKE_LOG"
-
-  run env \
-    GIT_PR_FAKE_PR_NUMBER=123 \
-    GIT_PR_FAKE_PR_BODY="Already written" \
-    "$BATS_TEST_DIRNAME/../git-pr" --copilot-update
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"WARN: --copilot-update is deprecated. Use 'git pr copilot --mode=update'."* ]]
-  assert_log_contains "gh pr edit 123 --repo example/repo --body"
-  grep -F "Already written" "$GIT_PR_FAKE_LOG.pr-edit-body"
-  grep -F "Generated body" "$GIT_PR_FAKE_LOG.pr-edit-body"
-  assert_log_not_contains "gh pr edit 123 --repo example/repo --title"
-}
-
 @test "copilot parse failure falls back to gh fill create" {
   create_malformed_copilot
 

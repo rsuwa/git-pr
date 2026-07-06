@@ -62,18 +62,6 @@ setup() {
   assert_log_contains "gh pr merge 123 --repo example/repo --auto --merge --match-head-commit local-head"
 }
 
-@test "deprecated merge alias warns and maps to auto-merge" {
-  export GIT_PR_FAKE_PR_NUMBER=123
-  export GIT_PR_FAKE_HEAD_SHA=local-head
-  export GIT_PR_FAKE_PR_HEAD_SHA=local-head
-
-  run "$BATS_TEST_DIRNAME/../git-pr" merge
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"WARN: 'git pr merge' is deprecated. Use 'git pr auto-merge'."* ]]
-  assert_log_contains "gh pr merge 123 --repo example/repo --auto --merge --match-head-commit local-head"
-}
-
 @test "auto-merge rejects stale pull request head" {
   export GIT_PR_FAKE_PR_NUMBER=123
   export GIT_PR_FAKE_HEAD_SHA=local-head
@@ -97,7 +85,7 @@ setup() {
   run "$BATS_TEST_DIRNAME/../git-pr" --language ja
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ERROR: --language/--diff-exclude require 'git pr copilot' or --copilot."* ]]
+  [[ "$output" == *"ERROR: --language/--diff-exclude require 'git pr copilot'."* ]]
 }
 
 @test "invalid copilot language config does not break non-copilot existing PR operations" {

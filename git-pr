@@ -29,9 +29,6 @@ Options:
   --label <label>          Add label(s) (repeatable, comma-separated ok)
   --reviewer <user>        Add reviewer(s) (repeatable, comma-separated ok)
   --assignee <user>        Add assignee(s) (repeatable, comma-separated ok)
-  --copilot                (deprecated) Copilot create mode for new PRs
-  --copilot-verbose        (deprecated) More detailed Copilot output
-  --copilot-update         (deprecated) Update managed Copilot section
   --mode <m>               Copilot mode (copilot only): create|update|auto (default: auto)
   --detail <d>             Copilot detail (copilot only): normal|verbose (default: normal)
   --language <lang>        Copilot output language: en|ja (default: env/config or en)
@@ -42,7 +39,6 @@ Options:
   --no-fill                Create: generate missing local body; existing PR: no implicit body update
   --no-edit                Do not edit existing PR title/body; metadata/base may update
   -a, --enable-auto-merge  Enable auto-merge after checks pass (for create/update)
-  --auto-merge             (deprecated) Alias for --enable-auto-merge
   -m, --merge-method <m>   merge|squash|rebase (auto-merge only; default: merge)
   --delete-branch          Delete branch after auto-merge (auto-merge only)
   --admin                  Rejected with auto-merge; use gh directly for admin merge
@@ -969,11 +965,11 @@ validate_common_options() {
   fi
 
   if has_copilot_scoped_option && [ "$use_copilot" != "true" ]; then
-    die "--mode/--detail require 'git pr copilot' or --copilot."
+    die "--mode/--detail require 'git pr copilot'."
   fi
 
   if has_copilot_config_option && [ "$use_copilot" != "true" ]; then
-    die "--language/--diff-exclude require 'git pr copilot' or --copilot."
+    die "--language/--diff-exclude require 'git pr copilot'."
   fi
 
   if [ "$copilot_mode_explicit" = "true" ]; then
@@ -997,11 +993,11 @@ validate_common_options() {
   fi
 
   if [ "$use_copilot" = "true" ] && has_manual_content_option; then
-    die "--copilot cannot be combined with --title/--body/--body-file."
+    die "git pr copilot cannot be combined with --title/--body/--body-file."
   fi
 
   if [ "$use_copilot" = "true" ] && has_body_generation_option; then
-    die "--copilot cannot be combined with --fill/--no-fill."
+    die "git pr copilot cannot be combined with --fill/--no-fill."
   fi
 
   if [ "$fill_explicit" = "true" ] && has_manual_content_option; then
@@ -1673,11 +1669,6 @@ if [ $# -gt 0 ]; then
       action="auto-merge"
       shift
       ;;
-    merge)
-      log_warn "'git pr merge' is deprecated. Use 'git pr auto-merge'."
-      action="auto-merge"
-      shift
-      ;;
     copilot)
       action="copilot"
       shift
@@ -1854,32 +1845,6 @@ while [ $# -gt 0 ]; do
       append_assignee_args "${1#*=}"
       shift
       ;;
-    --copilot)
-      log_warn "--copilot is deprecated. Use 'git pr copilot --mode=create'."
-      use_copilot="true"
-      copilot_mode="create"
-      copilot_mode_explicit="true"
-      fill="false"
-      shift
-      ;;
-    --copilot-verbose)
-      log_warn "--copilot-verbose is deprecated. Use 'git pr copilot --detail=verbose'."
-      use_copilot="true"
-      copilot_mode="create"
-      copilot_mode_explicit="true"
-      copilot_detail="verbose"
-      copilot_detail_explicit="true"
-      fill="false"
-      shift
-      ;;
-    --copilot-update)
-      log_warn "--copilot-update is deprecated. Use 'git pr copilot --mode=update'."
-      use_copilot="true"
-      copilot_mode="update"
-      copilot_mode_explicit="true"
-      fill="false"
-      shift
-      ;;
     --mode)
       require_option_value "$1" "$#"
       copilot_mode="$2"
@@ -1963,10 +1928,7 @@ while [ $# -gt 0 ]; do
       no_fill_explicit="true"
       shift
       ;;
-    -a|--enable-auto-merge|--auto-merge)
-      if [ "$1" = "--auto-merge" ]; then
-        log_warn "--auto-merge is deprecated. Use --enable-auto-merge."
-      fi
+    -a|--enable-auto-merge)
       auto_merge="true"
       auto_merge_explicit="true"
       shift
@@ -2206,7 +2168,7 @@ if [ -n "$pr_number" ]; then
 
     if [ "$use_copilot" = "true" ]; then
       if has_manual_content_option; then
-        die "--copilot cannot be combined with --title/--body/--body-file."
+        die "git pr copilot cannot be combined with --title/--body/--body-file."
       fi
       if [ "$copilot_update_effective" = "true" ]; then
         copilot_existing_title=$(get_pr_field "$pr_number" title)
@@ -2295,7 +2257,7 @@ build_pr_create_cmd
 
 if [ "$use_copilot" = "true" ]; then
   if has_manual_content_option; then
-    die "--copilot cannot be combined with --title/--body/--body-file."
+    die "git pr copilot cannot be combined with --title/--body/--body-file."
   fi
 
   if ! can_run_copilot_generation || ! generate_title_body_with_copilot; then

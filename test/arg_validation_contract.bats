@@ -79,7 +79,21 @@ run_git_pr_expect_error() {
 }
 
 @test "unknown argument fails before push" {
-  run_git_pr_expect_error "Unknown argument: --definitely-unknown" --definitely-unknown
+  local -a args
+  local case_data
+  local -a cases=(
+    "--definitely-unknown"
+    "merge"
+    "--copilot"
+    "--copilot-verbose"
+    "--copilot-update"
+    "--auto-merge"
+  )
+
+  for case_data in "${cases[@]}"; do
+    read -r -a args <<< "$case_data"
+    run_git_pr_expect_error "Unknown argument: $case_data" "${args[@]}"
+  done
 }
 
 @test "body and body-file cannot be combined" {
@@ -126,20 +140,20 @@ run_git_pr_expect_error() {
   done
 }
 
-@test "copilot cannot be combined with manual content" {
-  run_git_pr_expect_error "--copilot cannot be combined with --title/--body/--body-file." \
+@test "git pr copilot cannot be combined with manual content" {
+  run_git_pr_expect_error "git pr copilot cannot be combined with --title/--body/--body-file." \
     copilot --title "Manual title"
 
-  run_git_pr_expect_error "--copilot cannot be combined with --title/--body/--body-file." \
+  run_git_pr_expect_error "git pr copilot cannot be combined with --title/--body/--body-file." \
     copilot --body "Manual body"
 
-  run_git_pr_expect_error "--copilot cannot be combined with --title/--body/--body-file." \
+  run_git_pr_expect_error "git pr copilot cannot be combined with --title/--body/--body-file." \
     copilot --body-file "$BATS_TEST_TMPDIR/body.md"
 }
 
-@test "copilot cannot be combined with fill controls" {
-  run_git_pr_expect_error "--copilot cannot be combined with --fill/--no-fill." copilot --fill
-  run_git_pr_expect_error "--copilot cannot be combined with --fill/--no-fill." copilot --no-fill
+@test "git pr copilot cannot be combined with fill controls" {
+  run_git_pr_expect_error "git pr copilot cannot be combined with --fill/--no-fill." copilot --fill
+  run_git_pr_expect_error "git pr copilot cannot be combined with --fill/--no-fill." copilot --no-fill
 }
 
 @test "no-edit cannot be combined with content-changing options" {
@@ -200,7 +214,6 @@ run_git_pr_expect_error() {
     "--base main"
     "--draft"
     "--web"
-    "--copilot"
     "--title Manual-title"
     "--body Manual-body"
     "--body-file $BATS_TEST_TMPDIR/body.md"

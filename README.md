@@ -316,19 +316,6 @@ SHA256 checks use `sha256sum` when available, then `shasum -a 256`.
 before downloading. URL userinfo, query strings, and fragments are redacted in
 these status messages.
 
-## Deprecated aliases
-
-These aliases are still accepted for compatibility and may be removed in a
-future release:
-
-| Deprecated alias | Use instead |
-| --- | --- |
-| `--copilot` | `git pr copilot --mode=create` |
-| `--copilot-verbose` | `git pr copilot --mode=create --detail=verbose` |
-| `--copilot-update` | `git pr copilot --mode=update` |
-| `--auto-merge` | `--enable-auto-merge` |
-| `git pr merge` | `git pr auto-merge` |
-
 `git pr auto-merge` delegates to `gh pr merge --auto`. Depending on repository
 rules and merge queue state, GitHub CLI may enable deferred auto-merge, add the
 pull request to a merge queue, or merge immediately when requirements are
