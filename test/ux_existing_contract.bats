@@ -1,4 +1,7 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2030,SC2031
+# Bats runs each @test in its own process; per-test fake environment exports
+# are intentionally scoped to the current test.
 
 load test_helper
 
