@@ -575,6 +575,7 @@ OTHER
   ln -s "$target" "$GIT_PR_TEST_BIN/git-pr"
 
   run env \
+    GIT_PR_UPDATE_INSTALL_PATH="$GIT_PR_TEST_BIN/git-pr" \
     GIT_PR_UPDATE_URL="https://example.invalid/releases/latest/download/git-pr" \
     "$GIT_PR_TEST_BIN/git-pr" update
 

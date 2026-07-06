@@ -8,19 +8,58 @@ on:
 
 jobs:
   shell:
-    runs-on: ubuntu-latest
+    name: shell (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install tools
+      - name: Install tools (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y bats shellcheck
+      - name: Install tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install bats-core shellcheck
       - name: Syntax
         run: |
           bash -n git-pr
           bash -n install.sh
           bash -n test/test_helper.bash
       - name: ShellCheck
-        run: shellcheck git-pr install.sh test/test_helper.bash
+        run: shellcheck git-pr install.sh test/test_helper.bash test/*.bats
       - name: Tests
         run: bats test
+      - name: Release asset smoke
+        run: |
+          release_dir="$RUNNER_TEMP/git-pr-release"
+          install_dir="$RUNNER_TEMP/git-pr-install"
+          update_dir="$RUNNER_TEMP/git-pr-update"
+          mkdir -p "$release_dir" "$install_dir" "$update_dir"
+          cp git-pr install.sh "$release_dir/"
+          (
+            cd "$release_dir"
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum git-pr install.sh > SHA256SUMS
+            else
+              shasum -a 256 git-pr install.sh > SHA256SUMS
+            fi
+          )
+          GIT_PR_INSTALL_URL="file://$release_dir/git-pr" \
+            GIT_PR_CHECKSUM_URL="file://$release_dir/SHA256SUMS" \
+            GIT_PR_INSTALL_DIR="$install_dir" \
+            bash install.sh
+          "$install_dir/git-pr" --version
+
+          cp git-pr "$update_dir/git-pr"
+          chmod 755 "$update_dir/git-pr"
+          GIT_PR_UPDATE_URL="file://$release_dir/git-pr" \
+            GIT_PR_UPDATE_CHECKSUM_URL="file://$release_dir/SHA256SUMS" \
+            GIT_PR_UPDATE_INSTALL_PATH="$update_dir/git-pr" \
+            "$update_dir/git-pr" update
+          "$update_dir/git-pr" --version
