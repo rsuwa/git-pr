@@ -221,7 +221,7 @@ sha256_of() {
   run "$install_dir/git-pr"
   [ "$output" = "downloaded git-pr" ]
   grep -F "curl https://example.invalid/git-pr" "$curl_log"
-  if grep -F "SHA256SUMS" "$curl_log"; then
+  if grep -Fq "SHA256SUMS" "$curl_log"; then
     fail "install with GIT_PR_INSTALL_SHA256 should not download SHA256SUMS"
   fi
 }
@@ -291,7 +291,7 @@ OLD
   run "$GIT_PR_TEST_BIN/git-pr"
   [ "$output" = "downloaded git-pr" ]
   grep -F "curl https://example.invalid/git-pr" "$curl_log"
-  if grep -F "SHA256SUMS" "$curl_log"; then
+  if grep -Fq "SHA256SUMS" "$curl_log"; then
     fail "update with GIT_PR_UPDATE_SHA256 should not download SHA256SUMS"
   fi
 }
