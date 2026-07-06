@@ -31,8 +31,16 @@ The installer places `git-pr` in `~/.local/bin`. Make sure that directory is in
 your `PATH`. By default, the installer also downloads `SHA256SUMS` from the same
 release and verifies the downloaded `git-pr` before installing it.
 The `latest` URL follows whichever GitHub Release is currently marked latest.
-For a reproducible install, replace `latest` with a pinned tag such as
-`v0.2.0` in both the `install.sh` and asset URLs.
+For a reproducible install, pin both the downloaded installer and the payload
+URLs:
+
+```bash
+curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.2.0/install.sh |
+  env \
+    GIT_PR_INSTALL_URL="https://github.com/rsuwa/git-pr/releases/download/v0.2.0/git-pr" \
+    GIT_PR_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.2.0/SHA256SUMS" \
+    bash
+```
 
 Pin a downloaded payload by SHA256 instead of downloading `SHA256SUMS`:
 
@@ -156,6 +164,13 @@ git pr update
 `git pr update` downloads the `git-pr` asset and verifies it with the release
 `SHA256SUMS` by default. It refuses symlink and directory targets and replaces
 the executable only after checksum and Bash syntax validation pass.
+To update from a pinned release instead of `latest`:
+
+```bash
+GIT_PR_UPDATE_URL="https://github.com/rsuwa/git-pr/releases/download/v0.2.0/git-pr" \
+GIT_PR_UPDATE_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.2.0/SHA256SUMS" \
+  git pr update
+```
 
 Print the installed version:
 

@@ -16,7 +16,7 @@
   install/update assets before publishing releases.
 - Fix Bash 3.2 empty-array handling for macOS compatibility.
 - Document release asset requirements, `latest` URL tradeoffs, and pinned-tag
-  install/update verification.
+  install/update examples.
 
 ## 0.2.0 - 2026-07-06
 
