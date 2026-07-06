@@ -62,7 +62,7 @@ case "${1-}" in
   remote)
     if [ "${2-}" = "get-url" ] && [ "${3-}" = "origin" ]; then
       [ "${GIT_PR_FAKE_HAS_ORIGIN:-true}" = "true" ] || exit 1
-      printf 'git@github.com:example/repo.git\n'
+      printf '%s\n' "${GIT_PR_FAKE_ORIGIN_URL:-git@github.com:example/repo.git}"
     else
       exit 1
     fi
@@ -83,6 +83,7 @@ case "${1-}" in
     ;;
   symbolic-ref)
     if [ "${*: -1}" = "refs/remotes/origin/HEAD" ]; then
+      [ "${GIT_PR_FAKE_HAS_ORIGIN_HEAD:-true}" = "true" ] || exit 1
       printf 'origin/%s\n' "${GIT_PR_FAKE_DEFAULT_BRANCH:-main}"
     else
       exit 1
@@ -92,7 +93,7 @@ case "${1-}" in
     ref="${*: -1}"
     case "$ref" in
       refs/remotes/origin/*)
-        exit 0
+        [ "${GIT_PR_FAKE_REMOTE_BASE_EXISTS:-true}" = "true" ] || exit 1
         ;;
       refs/heads/*)
         [ "${GIT_PR_FAKE_HAS_LOCAL_BASE:-false}" = "true" ] || exit 1
@@ -104,6 +105,9 @@ case "${1-}" in
     ;;
   rev-list)
     if [ "${2-}" = "--count" ]; then
+      if [ -n "${GIT_PR_FAKE_REV_LIST_COUNT_STATUS:-}" ]; then
+        exit "$GIT_PR_FAKE_REV_LIST_COUNT_STATUS"
+      fi
       printf '%s\n' "${GIT_PR_FAKE_COMMIT_COUNT:-1}"
     elif [ "${2-}" = "--reverse" ]; then
       printf 'commit-one\n'
@@ -113,8 +117,10 @@ case "${1-}" in
     ;;
   diff)
     if [ "${2-}" = "--cached" ] && [ "${3-}" = "--quiet" ]; then
+      [ "${GIT_PR_FAKE_INDEX_DIRTY:-false}" != "true" ] || exit 1
       exit 0
     elif [ "${2-}" = "--quiet" ] && [ $# -eq 2 ]; then
+      [ "${GIT_PR_FAKE_WORKTREE_DIRTY:-false}" != "true" ] || exit 1
       exit 0
     elif [ "${2-}" = "--quiet" ]; then
       exit "${GIT_PR_FAKE_DIFF_QUIET_STATUS:-1}"
@@ -160,6 +166,32 @@ log_call() {
 
 log_call "$@"
 
+arg_after() {
+  local needle="$1"
+  local i
+
+  shift
+  for ((i = 1; i <= $#; i++)); do
+    if [ "${!i}" = "$needle" ]; then
+      local next=$((i + 1))
+      printf '%s' "${!next-}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+has_arg() {
+  local needle="$1"
+  local arg
+
+  shift
+  for arg in "$@"; do
+    [ "$arg" != "$needle" ] || return 0
+  done
+  return 1
+}
+
 fake_pr_number() {
   if [ -n "${GIT_PR_FAKE_PR_NUMBER:-}" ]; then
     printf '%s\n' "$GIT_PR_FAKE_PR_NUMBER"
@@ -173,10 +205,16 @@ case "${1-} ${2-}" in
     [ "${GIT_PR_FAKE_GH_AUTH:-true}" = "true" ] || exit 1
     ;;
   "repo view")
+    [ "${GIT_PR_FAKE_REPO_VIEW_FAIL:-false}" != "true" ] || exit 1
     printf '%s\n' "${GIT_PR_FAKE_DEFAULT_BRANCH:-main}"
     ;;
   "pr view")
     json_field=""
+    repo="$(arg_after --repo "$@" || true)"
+    if [ -n "$repo" ] && [ "$repo" != "${GIT_PR_FAKE_REPO:-example/repo}" ]; then
+      printf 'fake gh: unexpected repo: %s\n' "$repo" >&2
+      exit 1
+    fi
     for ((i = 1; i <= $#; i++)); do
       if [ "${!i}" = "--json" ]; then
         next=$((i + 1))
@@ -203,7 +241,7 @@ case "${1-} ${2-}" in
           exit 1
           ;;
       esac
-    elif [ "$#" -ge 2 ] && [ "${*: -1}" = "--web" ]; then
+    elif [ "$#" -ge 2 ] && has_arg --web "$@"; then
       exit 0
     else
       [ -n "${GIT_PR_FAKE_PR_NUMBER:-}" ] || exit 1
@@ -212,6 +250,10 @@ case "${1-} ${2-}" in
     ;;
   "pr list")
     jq_expr=""
+    repo="$(arg_after --repo "$@" || true)"
+    head="$(arg_after --head "$@" || true)"
+    state="$(arg_after --state "$@" || true)"
+    json_fields="$(arg_after --json "$@" || true)"
     pr_number_value="$(fake_pr_number)"
     for ((i = 1; i <= $#; i++)); do
       if [ "${!i}" = "--jq" ]; then
@@ -220,7 +262,30 @@ case "${1-} ${2-}" in
         break
       fi
     done
+    if [ "$repo" != "${GIT_PR_FAKE_REPO:-example/repo}" ]; then
+      printf 'fake gh: pr list missing or unexpected --repo: %s\n' "$repo" >&2
+      exit 1
+    fi
+    if [ "$head" != "${GIT_PR_FAKE_BRANCH:-feature}" ]; then
+      printf 'fake gh: pr list missing or unexpected --head: %s\n' "$head" >&2
+      exit 1
+    fi
+    if [ "$state" != "open" ]; then
+      printf 'fake gh: pr list missing or unexpected --state: %s\n' "$state" >&2
+      exit 1
+    fi
+    if ! printf '%s\n' "$json_fields" | grep -F 'number' >/dev/null || \
+       ! printf '%s\n' "$json_fields" | grep -F 'headRepositoryOwner' >/dev/null; then
+      printf 'fake gh: pr list missing or unexpected --json: %s\n' "$json_fields" >&2
+      exit 1
+    fi
     if [ -n "$jq_expr" ]; then
+      expected_owner="${GIT_PR_FAKE_HEAD_OWNER:-example}"
+      if ! printf '%s\n' "$jq_expr" | grep -F 'headRepositoryOwner.login' >/dev/null || \
+         ! printf '%s\n' "$jq_expr" | grep -F "\"$expected_owner\"" >/dev/null; then
+        printf 'fake gh: pr list --jq did not filter by head owner %s: %s\n' "$expected_owner" "$jq_expr" >&2
+        exit 1
+      fi
       [ -n "$pr_number_value" ] || exit 0
       case "$jq_expr" in
         *number*)
@@ -300,6 +365,75 @@ assert_log_not_contains() {
   local unexpected="$1"
   if grep -F "$unexpected" "$GIT_PR_FAKE_LOG" >/dev/null; then
     printf 'Expected log not to contain:\n%s\n\nActual log:\n' "$unexpected" >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  fi
+}
+
+assert_no_git_push() {
+  if grep -E '^git( .*)? push( |$)' "$GIT_PR_FAKE_LOG" >/dev/null; then
+    printf 'Expected no git push call.\n\nActual log:\n' >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  fi
+}
+
+assert_no_command_logged() {
+  local command_name="$1"
+
+  if grep -E "^$command_name( |$)" "$GIT_PR_FAKE_LOG" >/dev/null; then
+    printf 'Expected no %s command call.\n\nActual log:\n' "$command_name" >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  fi
+}
+
+assert_log_order() {
+  local first="$1"
+  local second="$2"
+  local first_line
+  local second_line
+
+  first_line=$(grep -n -F "$first" "$GIT_PR_FAKE_LOG" | head -n 1 | cut -d: -f1)
+  second_line=$(grep -n -F "$second" "$GIT_PR_FAKE_LOG" | head -n 1 | cut -d: -f1)
+  if [ -z "$first_line" ] || [ -z "$second_line" ] || [ "$first_line" -ge "$second_line" ]; then
+    printf 'Expected log entry:\n%s\n\nto appear before:\n%s\n\nActual log:\n' "$first" "$second" >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  fi
+}
+
+assert_log_line_contains_all() {
+  local prefix="$1"
+  local line
+  shift
+
+  line=$(grep -F "$prefix" "$GIT_PR_FAKE_LOG" | head -n 1) || {
+    printf 'Expected log line with prefix:\n%s\n\nActual log:\n' "$prefix" >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  }
+  for expected in "$@"; do
+    if ! printf '%s\n' "$line" | grep -F -- "$expected" >/dev/null; then
+      printf 'Expected log line:\n%s\n\nto contain:\n%s\n\nActual log:\n' "$line" "$expected" >&2
+      cat "$GIT_PR_FAKE_LOG" >&2
+      return 1
+    fi
+  done
+}
+
+assert_log_line_not_contains() {
+  local prefix="$1"
+  local unexpected="$2"
+  local line
+
+  line=$(grep -F "$prefix" "$GIT_PR_FAKE_LOG" | head -n 1) || {
+    printf 'Expected log line with prefix:\n%s\n\nActual log:\n' "$prefix" >&2
+    cat "$GIT_PR_FAKE_LOG" >&2
+    return 1
+  }
+  if printf '%s\n' "$line" | grep -F -- "$unexpected" >/dev/null; then
+    printf 'Expected log line:\n%s\n\nnot to contain:\n%s\n\nActual log:\n' "$line" "$unexpected" >&2
     cat "$GIT_PR_FAKE_LOG" >&2
     return 1
   fi
