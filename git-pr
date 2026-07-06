@@ -102,6 +102,133 @@ register_cleanup_path() {
   fi
 }
 
+log_copilot_debug() {
+  if [ "$#" -ne 7 ]; then
+    die "Internal error: log_copilot_debug expects 7 arguments."
+  fi
+
+  local reason="$1"
+  local log_dir="$2"
+  local log_tag="$3"
+  local prompt_path="$4"
+  local diff_path="$5"
+  local response_text="$6"
+  local log_content="$7"
+  local base
+
+  mkdir -p "$log_dir"
+  chmod 700 "$log_dir" 2>/dev/null || true
+  base="$log_dir/copilot-$log_tag"
+  (
+    umask 077
+    printf '%s\n' "$reason" > "$base.reason"
+    if [ -n "$log_content" ]; then
+      printf '%s\n' "$response_text" > "$base.response"
+      cp "$prompt_path" "$base.prompt" 2>/dev/null || true
+      cp "$diff_path" "$base.diff" 2>/dev/null || true
+    else
+      printf 'Prompt, diff, and response content omitted. Set GIT_PR_COPILOT_LOG_CONTENT=1 to keep them.\n' > "$base.meta"
+    fi
+  )
+  log_warn "Copilot debug log saved: $base.*"
+}
+
+set_title_body_from_copilot_marked_response() {
+  if [ "$#" -ne 2 ]; then
+    die "Internal error: set_title_body_from_copilot_marked_response expects 2 arguments."
+  fi
+
+  local title_path="$1"
+  local body_path="$2"
+
+  if awk -v tf="$title_path" -v bf="$body_path" '
+    function trim(s) {
+      sub(/^[[:space:]]+/, "", s)
+      sub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    BEGIN { state=""; title_set=0 }
+    $0 == "__GIT_PR_TITLE__" { state="title"; next }
+    $0 == "__GIT_PR_BODY__" { if (!title_set) exit 2; state="body"; next }
+    $0 == "__GIT_PR_END__" { exit }
+    state == "title" {
+      t = trim($0)
+      if (t == "") next
+      print t > tf
+      title_set=1
+      state="title_done"
+      next
+    }
+    state == "body" { print $0 > bf }
+    END { if (!title_set) exit 1 }
+  '; then
+    title=$(cat "$title_path")
+    body=$(cat "$body_path")
+  else
+    title=""
+    body=""
+  fi
+}
+
+set_title_body_from_copilot_fallback_response() {
+  if [ "$#" -ne 1 ]; then
+    die "Internal error: set_title_body_from_copilot_fallback_response expects 1 argument."
+  fi
+
+  local response_file="$1"
+
+  title=$(awk '
+    function trim(s) {
+      sub(/^[[:space:]]+/, "", s)
+      sub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    BEGIN { IGNORECASE=1; want_next=0 }
+    {
+      if (want_next) {
+        t = trim($0)
+        if (t != "") {
+          low_t = tolower(t)
+          if (match(low_t, /^(>[[:space:]]*)?(#{1,6}[[:space:]]*)?(body|本文|ボディ)[[:space:]]*([:：-]|$)/)) {
+            exit
+          }
+          print t
+          exit
+        }
+      }
+      line = $0
+      low = tolower(line)
+      if (match(low, /^[[:space:]]*(>[[:space:]]*)?(#{1,6}[[:space:]]*)?(title|タイトル)[[:space:]]*([:：-][[:space:]]*|$)/)) {
+        rest = substr(line, RLENGTH + 1)
+        rest = trim(rest)
+        if (rest != "") {
+          print rest
+          exit
+        }
+        want_next = 1
+      }
+    }' "$response_file")
+  body=$(awk '
+    function trim(s) {
+      sub(/^[[:space:]]+/, "", s)
+      sub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    BEGIN { IGNORECASE=1; found=0 }
+    {
+      line = $0
+      low = tolower(line)
+      if (!found && match(low, /^[[:space:]]*(>[[:space:]]*)?(#{1,6}[[:space:]]*)?(body|本文|ボディ)[[:space:]]*([:：-][[:space:]]*|$)/)) {
+        found = 1
+        rest = substr(line, RLENGTH + 1)
+        rest = trim(rest)
+        if (length(rest) > 0) print rest
+        next
+      }
+      if (found) print line
+    }' "$response_file")
+}
+
 generate_title_body_with_copilot() {
   if ! command -v copilot >/dev/null 2>&1; then
     log_warn "Copilot CLI not found; falling back."
@@ -236,129 +363,39 @@ Input:
 EOF
   cat "$diff_file" >> "$prompt_file"
 
-  local response
-  log_copilot_debug() {
-    local reason="$1"
-    mkdir -p "$copilot_log_dir"
-    chmod 700 "$copilot_log_dir" 2>/dev/null || true
-    local base="$copilot_log_dir/copilot-$copilot_log_tag"
-    (
-      umask 077
-      printf '%s\n' "$reason" > "$base.reason"
-      if [ -n "$copilot_log_content" ]; then
-        printf '%s\n' "$response" > "$base.response"
-        cp "$prompt_file" "$base.prompt" 2>/dev/null || true
-        cp "$diff_file" "$base.diff" 2>/dev/null || true
-      else
-        printf 'Prompt, diff, and response content omitted. Set GIT_PR_COPILOT_LOG_CONTENT=1 to keep them.\n' > "$base.meta"
-      fi
-    )
-    log_warn "Copilot debug log saved: $base.*"
-  }
-
+  local response=""
   response=$(cd "$repo_root" && copilot -s --no-custom-instructions --stream off -p "@$prompt_file") || {
     log_warn "Copilot CLI failed; falling back."
-    log_copilot_debug "copilot-cli-failed"
+    log_copilot_debug "copilot-cli-failed" "$copilot_log_dir" "$copilot_log_tag" "$prompt_file" "$diff_file" "$response" "$copilot_log_content"
     return 1
   }
   response=$(printf '%s\n' "$response" | sed 's/\r$//')
+
+  local response_file
+  response_file="$temp_dir/response.txt"
+  printf '%s\n' "$response" > "$response_file"
 
   local title_file
   local body_file
   title_file="$temp_dir/title.txt"
   body_file="$temp_dir/body.txt"
-  if printf '%s\n' "$response" | awk -v tf="$title_file" -v bf="$body_file" '
-    function trim(s) {
-      sub(/^[[:space:]]+/, "", s)
-      sub(/[[:space:]]+$/, "", s)
-      return s
-    }
-    BEGIN { state=""; title_set=0 }
-    $0 == "__GIT_PR_TITLE__" { state="title"; next }
-    $0 == "__GIT_PR_BODY__" { if (!title_set) exit 2; state="body"; next }
-    $0 == "__GIT_PR_END__" { exit }
-    state == "title" {
-      t = trim($0)
-      if (t == "") next
-      print t > tf
-      title_set=1
-      state="title_done"
-      next
-    }
-    state == "body" { print $0 > bf }
-    END { if (!title_set) exit 1 }
-  '; then
-    title=$(cat "$title_file")
-    body=$(cat "$body_file")
-  else
-    title=""
-    body=""
-  fi
+  set_title_body_from_copilot_marked_response "$title_file" "$body_file" < "$response_file"
   rm -f "$title_file" "$body_file"
 
   if [ -z "$title" ] || [ -z "$body" ]; then
-    title=$(printf '%s\n' "$response" | awk '
-      function trim(s) {
-        sub(/^[[:space:]]+/, "", s)
-        sub(/[[:space:]]+$/, "", s)
-        return s
-      }
-      BEGIN { IGNORECASE=1; want_next=0 }
-      {
-        if (want_next) {
-          t = trim($0)
-          if (t != "") {
-            low_t = tolower(t)
-            if (match(low_t, /^(>[[:space:]]*)?(#{1,6}[[:space:]]*)?(body|本文|ボディ)[[:space:]]*([:：-]|$)/)) {
-              exit
-            }
-            print t
-            exit
-          }
-        }
-        line = $0
-        low = tolower(line)
-        if (match(low, /^[[:space:]]*(>[[:space:]]*)?(#{1,6}[[:space:]]*)?(title|タイトル)[[:space:]]*([:：-][[:space:]]*|$)/)) {
-          rest = substr(line, RLENGTH + 1)
-          rest = trim(rest)
-          if (rest != "") {
-            print rest
-            exit
-          }
-          want_next = 1
-        }
-      }')
-    body=$(printf '%s\n' "$response" | awk '
-      function trim(s) {
-        sub(/^[[:space:]]+/, "", s)
-        sub(/[[:space:]]+$/, "", s)
-        return s
-      }
-      BEGIN { IGNORECASE=1; found=0 }
-      {
-        line = $0
-        low = tolower(line)
-        if (!found && match(low, /^[[:space:]]*(>[[:space:]]*)?(#{1,6}[[:space:]]*)?(body|本文|ボディ)[[:space:]]*([:：-][[:space:]]*|$)/)) {
-          found = 1
-          rest = substr(line, RLENGTH + 1)
-          rest = trim(rest)
-          if (length(rest) > 0) print rest
-          next
-        }
-        if (found) print line
-      }')
+    set_title_body_from_copilot_fallback_response "$response_file"
   fi
 
   if [ -z "$title" ] || [ -z "$body" ]; then
     title=""
     body=""
     log_warn "Failed to parse Copilot output; falling back."
-    log_copilot_debug "copilot-parse-failed"
+    log_copilot_debug "copilot-parse-failed" "$copilot_log_dir" "$copilot_log_tag" "$prompt_file" "$diff_file" "$response" "$copilot_log_content"
     return 1
   fi
 
   if [ -n "$copilot_log_always" ]; then
-    log_copilot_debug "copilot-success"
+    log_copilot_debug "copilot-success" "$copilot_log_dir" "$copilot_log_tag" "$prompt_file" "$diff_file" "$response" "$copilot_log_content"
   fi
   return 0
 }
