@@ -55,6 +55,53 @@ FAKE_CURL
   chmod 755 "$GIT_PR_TEST_BIN/curl"
 }
 
+write_checksum_failing_curl() {
+  cat > "$GIT_PR_TEST_BIN/curl" <<'FAKE_CURL'
+#!/usr/bin/env bash
+set -euo pipefail
+
+output=""
+url=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o)
+      output="$2"
+      shift 2
+      ;;
+    *)
+      url="$1"
+      shift
+      ;;
+  esac
+done
+
+[ -n "$output" ] || exit 1
+case "$url" in
+  */SHA256SUMS)
+    exit 22
+    ;;
+  *)
+    cp "$GIT_PR_TEST_DOWNLOAD" "$output"
+    ;;
+esac
+FAKE_CURL
+  chmod 755 "$GIT_PR_TEST_BIN/curl"
+}
+
+write_directory_swap_chmod() {
+  cat > "$GIT_PR_TEST_BIN/chmod" <<'FAKE_CHMOD'
+#!/usr/bin/env bash
+set -euo pipefail
+
+"$GIT_PR_TEST_REAL_CHMOD" "$@"
+if [ -n "${GIT_PR_TEST_INSTALL_PATH:-}" ]; then
+  rm -f "$GIT_PR_TEST_INSTALL_PATH"
+  mkdir -p "$GIT_PR_TEST_INSTALL_PATH"
+fi
+FAKE_CHMOD
+  chmod 755 "$GIT_PR_TEST_BIN/chmod"
+}
+
 copy_current_git_pr_for_update() {
   cp "$BATS_TEST_DIRNAME/../git-pr" "$GIT_PR_TEST_BIN/git-pr"
   chmod 755 "$GIT_PR_TEST_BIN/git-pr"
@@ -296,6 +343,7 @@ OLD
     "$BATS_TEST_DIRNAME/../install.sh"
 
   [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Downloaded git-pr is not valid Bash."* ]]
   [ ! -e "$install_dir/git-pr" ]
 }
 
@@ -347,6 +395,38 @@ OLD
   [[ "$output" == git-pr\ * ]]
 }
 
+@test "install reports checksum download failure" {
+  install_dir="$BATS_TEST_TMPDIR/install"
+  write_checksum_failing_curl
+
+  run env \
+    -u GIT_PR_INSTALL_SHA256 \
+    -u GIT_PR_CHECKSUM_URL \
+    GIT_PR_INSTALL_URL="https://example.invalid/releases/latest/download/git-pr" \
+    GIT_PR_INSTALL_DIR="$install_dir" \
+    "$BATS_TEST_DIRNAME/../install.sh"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to download SHA256SUMS from https://example.invalid/releases/latest/download/SHA256SUMS"* ]]
+  [ ! -e "$install_dir/git-pr" ]
+}
+
+@test "update reports checksum download failure and preserves current executable" {
+  copy_current_git_pr_for_update
+  write_checksum_failing_curl
+
+  run env \
+    -u GIT_PR_UPDATE_SHA256 \
+    -u GIT_PR_UPDATE_CHECKSUM_URL \
+    GIT_PR_UPDATE_URL="https://example.invalid/releases/latest/download/git-pr" \
+    "$GIT_PR_TEST_BIN/git-pr" update
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to download SHA256SUMS from https://example.invalid/releases/latest/download/SHA256SUMS"* ]]
+  run "$GIT_PR_TEST_BIN/git-pr" --version
+  [[ "$output" == git-pr\ * ]]
+}
+
 @test "install refuses a symlink target" {
   install_dir="$BATS_TEST_TMPDIR/install"
   mkdir -p "$install_dir"
@@ -375,6 +455,26 @@ OLD
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: Refusing to install over directory target: $install_dir/git-pr"* ]]
+}
+
+@test "install refuses a directory target created before final move" {
+  install_dir="$BATS_TEST_TMPDIR/install"
+  install_path="$install_dir/git-pr"
+  real_chmod="$(command -v chmod)"
+  write_directory_swap_chmod
+
+  run env \
+    -u GIT_PR_INSTALL_SHA256 \
+    -u GIT_PR_CHECKSUM_URL \
+    GIT_PR_TEST_REAL_CHMOD="$real_chmod" \
+    GIT_PR_TEST_INSTALL_PATH="$install_path" \
+    GIT_PR_INSTALL_URL="https://example.invalid/releases/latest/download/git-pr" \
+    GIT_PR_INSTALL_DIR="$install_dir" \
+    "$BATS_TEST_DIRNAME/../install.sh"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Refusing to install over directory target: $install_path"* ]]
+  [ -d "$install_path" ]
 }
 
 @test "update refuses a symlink target" {

@@ -136,14 +136,18 @@ else
   fi
 fi
 
-bash -n "$temp_file"
-chmod 755 "$temp_file"
+bash -n "$temp_file" || die "Downloaded git-pr is not valid Bash."
+chmod 755 "$temp_file" || die "Failed to make downloaded git-pr executable."
 
 if [ -L "$install_path" ]; then
   die "Refusing to install over symlink target: $install_path"
 fi
 
-mv -f "$temp_file" "$install_path"
+if [ -d "$install_path" ]; then
+  die "Refusing to install over directory target: $install_path"
+fi
+
+mv -f "$temp_file" "$install_path" || die "Failed to install git-pr to $install_path"
 
 echo "Installed git-pr to $install_path"
 echo "Make sure $install_dir is in PATH."
