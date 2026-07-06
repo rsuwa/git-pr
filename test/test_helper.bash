@@ -202,6 +202,11 @@ fake_pr_number() {
 
 case "${1-} ${2-}" in
   "auth status")
+    auth_host="$(arg_after --hostname "$@" || true)"
+    if [ -n "${GIT_PR_FAKE_EXPECT_AUTH_HOST:-}" ] && [ "$auth_host" != "$GIT_PR_FAKE_EXPECT_AUTH_HOST" ]; then
+      printf 'fake gh: unexpected auth host: %s\n' "$auth_host" >&2
+      exit 1
+    fi
     [ "${GIT_PR_FAKE_GH_AUTH:-true}" = "true" ] || exit 1
     ;;
   "repo view")

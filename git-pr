@@ -82,6 +82,16 @@ require_option_value() {
   fi
 }
 
+require_nonempty_option_value() {
+  local option="$1"
+  local value
+
+  value=$(trim_spaces "$2")
+  if [ -z "$value" ]; then
+    die "$option requires a non-empty value."
+  fi
+}
+
 cleanup_registered_paths() {
   local path
 
@@ -491,6 +501,7 @@ load_git_pr_config() {
 append_label_args() {
   local value="$1"
   local -a parts
+
   IFS=',' read -r -a parts <<< "$value"
   for part in "${parts[@]}"; do
     part=$(trim_spaces "$part")
@@ -504,6 +515,7 @@ append_label_args() {
 append_reviewer_args() {
   local value="$1"
   local -a parts
+
   IFS=',' read -r -a parts <<< "$value"
   for part in "${parts[@]}"; do
     part=$(trim_spaces "$part")
@@ -517,6 +529,7 @@ append_reviewer_args() {
 append_assignee_args() {
   local value="$1"
   local -a parts
+
   IFS=',' read -r -a parts <<< "$value"
   for part in "${parts[@]}"; do
     part=$(trim_spaces "$part")
@@ -572,7 +585,7 @@ append_pr_edit_content_args() {
     pr_edit_cmd+=(--title "$title")
   fi
   if [ "$include_body" = "true" ]; then
-    if [ -n "$body_file" ]; then
+    if [ "$body_file_explicit" = "true" ]; then
       pr_edit_cmd+=(--body-file "$body_file")
     else
       pr_edit_cmd+=(--body "$body")
@@ -624,8 +637,8 @@ append_pr_create_fill_args() {
   esac
 }
 
-has_nonempty_manual_content_value() {
-  [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ]
+has_manual_content_option() {
+  [ "$title_explicit" = "true" ] || [ "$body_explicit" = "true" ] || [ "$body_file_explicit" = "true" ]
 }
 
 has_copilot_scoped_option() {
@@ -674,7 +687,8 @@ has_disable_auto_merge_conflict() {
 }
 
 has_auto_merge_modifier_without_enable() {
-  { [ "$auto_merge_delete_branch" = "true" ] || [ "$auto_merge_admin" = "true" ] || \
+  { [ "$merge_method_explicit" = "true" ] || \
+    [ "$auto_merge_delete_branch" = "true" ] || [ "$auto_merge_admin" = "true" ] || \
     [ -n "$auto_merge_match_head" ]; } && \
     [ "$auto_merge" != "true" ] && [ "$action" != "auto-merge" ]
 }
@@ -692,11 +706,50 @@ handle_update_action() {
 }
 
 validate_common_options() {
-  if [ -n "$body" ] && [ -n "$body_file" ]; then
+  local diff_exclude_arg
+
+  if [ "$base_branch_explicit" = "true" ]; then
+    require_nonempty_option_value "--base" "$base_branch"
+  fi
+  if [ "$title_explicit" = "true" ]; then
+    require_nonempty_option_value "--title" "$title"
+  fi
+  if [ "$body_file_explicit" = "true" ]; then
+    require_nonempty_option_value "--body-file" "$body_file"
+  fi
+  if [ "$template_file_explicit" = "true" ]; then
+    require_nonempty_option_value "--template" "$template_file"
+  fi
+  if [ "$label_explicit" = "true" ] && [ "${#label_args[@]}" -eq 0 ]; then
+    die "--label requires a non-empty value."
+  fi
+  if [ "$reviewer_explicit" = "true" ] && [ "${#reviewer_args[@]}" -eq 0 ]; then
+    die "--reviewer requires a non-empty value."
+  fi
+  if [ "$assignee_explicit" = "true" ] && [ "${#assignee_args[@]}" -eq 0 ]; then
+    die "--assignee requires a non-empty value."
+  fi
+  if [ "$copilot_mode_explicit" = "true" ]; then
+    require_nonempty_option_value "--mode" "$copilot_mode"
+  fi
+  if [ "$copilot_detail_explicit" = "true" ]; then
+    require_nonempty_option_value "--detail" "$copilot_detail"
+  fi
+  if [ "$language_explicit" = "true" ]; then
+    require_nonempty_option_value "--language" "$language"
+  fi
+  for diff_exclude_arg in "${diff_exclude_args[@]}"; do
+    require_nonempty_option_value "--diff-exclude" "$diff_exclude_arg"
+  done
+  if [ "$merge_method_explicit" = "true" ]; then
+    require_nonempty_option_value "--merge-method" "$merge_method"
+  fi
+
+  if [ "$body_explicit" = "true" ] && [ "$body_file_explicit" = "true" ]; then
     die "--body and --body-file cannot be used together."
   fi
 
-  if [ -n "$template_file" ] && { [ -n "$body" ] || [ -n "$body_file" ]; }; then
+  if [ "$template_file_explicit" = "true" ] && { [ "$body_explicit" = "true" ] || [ "$body_file_explicit" = "true" ]; }; then
     die "--template cannot be combined with --body/--body-file."
   fi
 
@@ -736,7 +789,7 @@ validate_common_options() {
     esac
   fi
 
-  if [ "$use_copilot" = "true" ] && has_nonempty_manual_content_value; then
+  if [ "$use_copilot" = "true" ] && has_manual_content_option; then
     die "--copilot cannot be combined with --title/--body/--body-file."
   fi
 
@@ -744,7 +797,7 @@ validate_common_options() {
     die "--copilot cannot be combined with --fill/--no-fill."
   fi
 
-  if [ "$fill_explicit" = "true" ] && has_nonempty_manual_content_value; then
+  if [ "$fill_explicit" = "true" ] && has_manual_content_option; then
     die "--fill/--fill-first/--fill-verbose cannot be combined with --title/--body/--body-file."
   fi
 
@@ -752,7 +805,7 @@ validate_common_options() {
     die "--fill/--fill-first/--fill-verbose cannot be combined with --template."
   fi
 
-  if [ "$skip_edit" = "true" ] && { [ "$use_copilot" = "true" ] || has_nonempty_manual_content_value || has_body_generation_option; }; then
+  if [ "$skip_edit" = "true" ] && { [ "$use_copilot" = "true" ] || has_manual_content_option || has_body_generation_option; }; then
     die "--no-edit cannot be combined with options that modify the PR body/title."
   fi
 
@@ -1102,6 +1155,20 @@ get_pr_field() {
   printf '%s' "$output"
 }
 
+is_valid_github_repo_path() {
+  case "$1" in
+    ""|/*|*/*/*)
+      return 1
+      ;;
+    */*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 github_repo_from_origin_url() {
   local url="$1"
   local host=""
@@ -1117,6 +1184,7 @@ github_repo_from_origin_url() {
     ssh://git@*/*)
       rest="${url#ssh://git@}"
       host="${rest%%/*}"
+      host="${host%%:*}"
       path="${rest#*/}"
       ;;
     https://*/*/*)
@@ -1131,28 +1199,55 @@ github_repo_from_origin_url() {
       host="${host##*@}"
       path="${rest#*/}"
       ;;
-    */*)
-      path="$url"
-      ;;
     *)
       return 1
       ;;
   esac
 
+  [ -n "$host" ] || return 1
+
   path="${path%.git}"
-  case "$path" in
-    */*)
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  is_valid_github_repo_path "$path" || return 1
 
   if [ -n "$host" ] && [ "$host" != "github.com" ]; then
     printf '%s/%s' "$host" "$path"
   else
     printf '%s' "$path"
   fi
+}
+
+github_host_from_origin_url() {
+  local url="$1"
+  local host=""
+  local rest
+
+  case "$url" in
+    git@*:*)
+      rest="${url#git@}"
+      host="${rest%%:*}"
+      ;;
+    ssh://git@*/*)
+      rest="${url#ssh://git@}"
+      host="${rest%%/*}"
+      host="${host%%:*}"
+      ;;
+    https://*/*/*)
+      rest="${url#https://}"
+      host="${rest%%/*}"
+      host="${host##*@}"
+      ;;
+    http://*/*/*)
+      rest="${url#http://}"
+      host="${rest%%/*}"
+      host="${host##*@}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  [ -n "$host" ] || return 1
+  printf '%s' "$host"
 }
 
 github_owner_from_repo() {
@@ -1305,12 +1400,23 @@ while [ $# -gt 0 ]; do
       base_branch_explicit="true"
       shift 2
       ;;
+    --base=*)
+      base_branch="${1#*=}"
+      base_branch_explicit="true"
+      shift
+      ;;
     -t|--title)
       require_option_value "$1" "$#"
       title="$2"
       title_explicit="true"
       fill="false"
       shift 2
+      ;;
+    --title=*)
+      title="${1#*=}"
+      title_explicit="true"
+      fill="false"
+      shift
       ;;
     -d|--body)
       require_option_value "$1" "$#"
@@ -1319,12 +1425,24 @@ while [ $# -gt 0 ]; do
       fill="false"
       shift 2
       ;;
+    --body=*)
+      body="${1#*=}"
+      body_explicit="true"
+      fill="false"
+      shift
+      ;;
     -F|--body-file)
       require_option_value "$1" "$#"
       body_file="$2"
       body_file_explicit="true"
       fill="false"
       shift 2
+      ;;
+    --body-file=*)
+      body_file="${1#*=}"
+      body_file_explicit="true"
+      fill="false"
+      shift
       ;;
     -e|--editor)
       editor="true"
@@ -1497,6 +1615,11 @@ while [ $# -gt 0 ]; do
       merge_method_explicit="true"
       shift 2
       ;;
+    --merge-method=*)
+      merge_method="${1#*=}"
+      merge_method_explicit="true"
+      shift
+      ;;
     --delete-branch)
       auto_merge_delete_branch="true"
       shift
@@ -1559,10 +1682,6 @@ fi
 require_cmd git
 require_cmd gh
 
-if ! gh auth status >/dev/null 2>&1; then
-  die "GitHub CLI is not authenticated. Run: gh auth login"
-fi
-
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "Not a git repository."
 current_branch=$(git -C "$repo_root" branch --show-current)
 [ -n "$current_branch" ] || die "Detached HEAD. Checkout a branch first."
@@ -1574,7 +1693,12 @@ if ! origin_url=$(git -C "$repo_root" remote get-url origin 2>/dev/null); then
   die "Remote 'origin' not found."
 fi
 github_repo=$(github_repo_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $origin_url"
+github_host=$(github_host_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $origin_url"
 github_owner=$(github_owner_from_repo "$github_repo")
+
+if ! gh auth status --hostname "$github_host" >/dev/null 2>&1; then
+  die "GitHub CLI is not authenticated for $github_host. Run: gh auth login --hostname $github_host"
+fi
 
 if [ "$action" != "auto-merge" ]; then
   if [ "$base_branch_explicit" = "false" ]; then
@@ -1723,7 +1847,7 @@ if [ -n "$pr_number" ]; then
     update_base="$base_branch_explicit"
 
     if [ "$use_copilot" = "true" ]; then
-      if [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ]; then
+      if has_manual_content_option; then
         die "--copilot cannot be combined with --title/--body/--body-file."
       fi
       if [ "$copilot_update_effective" = "true" ]; then
@@ -1743,13 +1867,13 @@ if [ -n "$pr_number" ]; then
     fi
 
     if [ "$use_copilot" != "true" ]; then
-      if [ -n "$title" ]; then
+      if [ "$title_explicit" = "true" ]; then
         update_title="true"
       fi
 
-      if [ -n "$body_file" ]; then
+      if [ "$body_file_explicit" = "true" ]; then
         update_body="true"
-      elif [ -n "$body" ]; then
+      elif [ "$body_explicit" = "true" ]; then
         update_body="true"
       elif [ "$fill" = "true" ]; then
         if [ "$commit_count" -eq 0 ]; then
@@ -1785,7 +1909,7 @@ fi
 build_pr_create_cmd
 
 if [ "$use_copilot" = "true" ]; then
-  if [ -n "$title" ] || [ -n "$body" ] || [ -n "$body_file" ]; then
+  if has_manual_content_option; then
     die "--copilot cannot be combined with --title/--body/--body-file."
   fi
 
@@ -1801,18 +1925,18 @@ elif [ -n "$template_file" ]; then
     title=$(git -C "$repo_root" log -1 --pretty=%s)
   fi
   pr_create_cmd+=(--title "$title" --template "$template_file")
-elif [ "$fill" = "true" ] && [ -z "$title" ] && [ -z "$body" ] && [ -z "$body_file" ] && [ -z "$template_file" ]; then
+elif [ "$fill" = "true" ] && [ "$title_explicit" != "true" ] && [ "$body_explicit" != "true" ] && [ "$body_file_explicit" != "true" ] && [ "$template_file_explicit" != "true" ]; then
   append_pr_create_fill_args
 else
   if [ -z "$title" ]; then
     title=$(git -C "$repo_root" log -1 --pretty=%s)
   fi
 
-  if [ -z "$body" ] && [ -z "$body_file" ] && [ -z "$template_file" ]; then
+  if [ "$body_explicit" != "true" ] && [ "$body_file_explicit" != "true" ] && [ "$template_file_explicit" != "true" ]; then
     generate_body_from_commits
   fi
 
-  if [ -n "$body_file" ]; then
+  if [ "$body_file_explicit" = "true" ]; then
     pr_create_cmd+=(--title "$title" --body-file "$body_file")
   elif [ -n "$template_file" ]; then
     pr_create_cmd+=(--title "$title")

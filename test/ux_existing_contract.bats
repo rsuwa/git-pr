@@ -30,6 +30,18 @@ setup() {
   [ "$(cat "$GIT_PR_FAKE_LOG.pr-edit-body-file")" = "-" ]
 }
 
+@test "existing PR explicit empty body clears body" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+  export GIT_PR_FAKE_PR_BODY="Already written"
+
+  run "$GIT_PR" --body ""
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body ''"
+  [ -e "$GIT_PR_FAKE_LOG.pr-edit-body" ]
+  [ "$(cat "$GIT_PR_FAKE_LOG.pr-edit-body")" = "" ]
+}
+
 @test "existing PR create-only draft option fails before push" {
   export GIT_PR_FAKE_PR_NUMBER=123
 
