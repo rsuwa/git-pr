@@ -63,6 +63,21 @@ run_git_pr_expect_error() {
   done
 }
 
+@test "empty values for non-body value options fail before push" {
+  run_git_pr_expect_error "--base requires a non-empty value." --base ""
+  run_git_pr_expect_error "--title requires a non-empty value." --title ""
+  run_git_pr_expect_error "--body-file requires a non-empty value." --body-file ""
+  run_git_pr_expect_error "--template requires a non-empty value." --template ""
+  run_git_pr_expect_error "--label requires a non-empty value." --label ""
+  run_git_pr_expect_error "--reviewer requires a non-empty value." --reviewer ""
+  run_git_pr_expect_error "--assignee requires a non-empty value." --assignee ""
+  run_git_pr_expect_error "--mode requires a non-empty value." copilot --mode ""
+  run_git_pr_expect_error "--detail requires a non-empty value." copilot --detail ""
+  run_git_pr_expect_error "--language requires a non-empty value." copilot --language ""
+  run_git_pr_expect_error "--diff-exclude requires a non-empty value." copilot --diff-exclude ""
+  run_git_pr_expect_error "--merge-method requires a non-empty value." --merge-method ""
+}
+
 @test "unknown argument fails before push" {
   run_git_pr_expect_error "Unknown argument: --definitely-unknown" --definitely-unknown
 }
@@ -70,6 +85,10 @@ run_git_pr_expect_error() {
 @test "body and body-file cannot be combined" {
   run_git_pr_expect_error "--body and --body-file cannot be used together." \
     --body "Manual body" \
+    --body-file "$BATS_TEST_TMPDIR/body.md"
+
+  run_git_pr_expect_error "--body and --body-file cannot be used together." \
+    --body "" \
     --body-file "$BATS_TEST_TMPDIR/body.md"
 }
 
@@ -152,6 +171,11 @@ run_git_pr_expect_error() {
 @test "invalid merge method is rejected" {
   run_git_pr_expect_error "Invalid merge method: fast-forward (use merge|squash|rebase)" \
     auto-merge --merge-method fast-forward
+}
+
+@test "merge method requires auto-merge context" {
+  run_git_pr_expect_error "Auto-merge options require --enable-auto-merge or 'git pr auto-merge'." \
+    --merge-method squash
 }
 
 @test "invalid copilot mode and detail are rejected" {

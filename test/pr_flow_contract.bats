@@ -71,6 +71,55 @@ setup() {
   assert_log_not_contains "token@github.com"
 }
 
+@test "GitHub Enterprise origin uses hostname for auth and repo" {
+  export GIT_PR_FAKE_ORIGIN_URL="git@ghe.example.com:octo/repo.git"
+  export GIT_PR_FAKE_REPO="ghe.example.com/octo/repo"
+  export GIT_PR_FAKE_EXPECT_AUTH_HOST="ghe.example.com"
+  export GIT_PR_FAKE_HEAD_OWNER="octo"
+
+  run "$GIT_PR"
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "gh auth status --hostname ghe.example.com"
+  assert_log_line_contains_all "gh pr create" "--repo ghe.example.com/octo/repo" "--base main" "--head feature" "--fill"
+}
+
+@test "GitHub Enterprise ssh origin strips ssh port from hostname" {
+  export GIT_PR_FAKE_ORIGIN_URL="ssh://git@ghe.example.com:2222/octo/repo.git"
+  export GIT_PR_FAKE_REPO="ghe.example.com/octo/repo"
+  export GIT_PR_FAKE_EXPECT_AUTH_HOST="ghe.example.com"
+  export GIT_PR_FAKE_HEAD_OWNER="octo"
+
+  run "$GIT_PR"
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "gh auth status --hostname ghe.example.com"
+  assert_log_line_contains_all "gh pr create" "--repo ghe.example.com/octo/repo" "--base main" "--head feature" "--fill"
+  assert_log_not_contains "ghe.example.com:2222/octo/repo"
+}
+
+@test "local path origin is rejected before push" {
+  export GIT_PR_FAKE_ORIGIN_URL="../repo.git"
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Remote 'origin' is not a supported GitHub repository URL: ../repo.git"* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
+@test "scp-like absolute path origin is rejected before push" {
+  export GIT_PR_FAKE_ORIGIN_URL="git@github.com:/home/me/repo.git"
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Remote 'origin' is not a supported GitHub repository URL: git@github.com:/home/me/repo.git"* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
 @test "rev-list count failure fails before pushing" {
   export GIT_PR_FAKE_REV_LIST_COUNT_STATUS=2
 
@@ -110,6 +159,30 @@ setup() {
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--title Manual\\ title" "--body Manual\\ body"
   assert_log_not_contains " --fill"
+}
+
+@test "create with explicit empty body keeps the body empty" {
+  run "$GIT_PR" --title "Empty body" --body ""
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--title Empty\\ body" "--body ''"
+  assert_log_not_contains "-\\ Test\\ commit"
+  assert_log_not_contains " --fill"
+}
+
+@test "long option equals values are accepted consistently" {
+  run "$GIT_PR" --base=develop --title="Manual title" --body="Manual body" --label=bug --reviewer=alice --assignee=bob
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr create" \
+    "--repo example/repo" \
+    "--base develop" \
+    "--head feature" \
+    "--label bug" \
+    "--reviewer alice" \
+    "--assignee bob" \
+    "--title Manual\\ title" \
+    "--body Manual\\ body"
 }
 
 @test "create with explicit body file passes body-file to gh" {
@@ -164,6 +237,13 @@ setup() {
   [ "$status" -eq 0 ]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
   assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
+}
+
+@test "create auto-merge accepts merge-method equals form" {
+  run "$GIT_PR" --enable-auto-merge --merge-method=squash
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr merge 1" "--repo example/repo" "--auto" "--squash" "--match-head-commit local-head"
 }
 
 @test "existing PR updates explicit title and body after push" {
