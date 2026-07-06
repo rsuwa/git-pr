@@ -172,7 +172,8 @@ Default base branch resolution order is:
 
 When local commit ranges or Copilot diffs are generated, `git-pr` fetches the
 selected base from `origin` first. Existing PR metadata-only updates do not need
-a local base ref.
+a local base ref, but explicit existing-PR `--base` retargets are checked
+against `origin` before pushing.
 
 ## Options
 
@@ -297,6 +298,8 @@ If the existing body is empty, the default `git pr` flow fills it from commits.
 
 Use `--no-edit` to avoid title/body edits while still allowing metadata and
 explicit base updates.
+When `--base` is used on an existing PR, `git-pr` verifies that the target base
+branch exists on `origin` before pushing the current branch.
 
 ## Development
 

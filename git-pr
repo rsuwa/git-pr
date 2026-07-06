@@ -1434,6 +1434,25 @@ ensure_base_ref_for_generation() {
   fi
 }
 
+ensure_base_branch_exists_for_retarget() {
+  local output
+  local line
+  local ref
+
+  if ! output=$(git -C "$repo_root" ls-remote --exit-code --heads origin "$base_branch" 2>/dev/null); then
+    die "Base branch '$base_branch' was not found on origin. Create it or choose an existing branch with --base."
+  fi
+
+  while IFS= read -r line; do
+    ref="${line#*$'\t'}"
+    if [ "$ref" = "refs/heads/$base_branch" ]; then
+      return 0
+    fi
+  done <<< "$output"
+
+  die "Base branch '$base_branch' was not found on origin. Create it or choose an existing branch with --base."
+}
+
 count_commits_since_base() {
   commit_count=$(git -C "$repo_root" rev-list --count "$base_ref..HEAD") || die "Failed to count commits between $base_ref and HEAD."
 }
@@ -2045,6 +2064,9 @@ if [ -n "$pr_number" ]; then
   fi
   if [ "$base_branch_explicit" = "true" ] && [ "$base_branch" = "$current_branch" ]; then
     die "You are on '$base_branch'. Create a feature branch first."
+  fi
+  if [ "$base_branch_explicit" = "true" ]; then
+    ensure_base_branch_exists_for_retarget
   fi
   if [ "$copilot_update_effective" = "true" ]; then
     copilot_existing_body=$(get_pr_field "$pr_number" body)

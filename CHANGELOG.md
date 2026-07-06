@@ -8,6 +8,7 @@
 - Reject unsafe `git-pr` auto-merge use of `--admin`, warn for the deprecated
   `git pr merge` alias, and clarify that GitHub CLI may merge or enqueue when
   auto-merge requirements are already met.
+- Validate explicit existing-PR base retargets against `origin` before pushing.
 
 ## 0.2.0 - 2026-07-06
 
