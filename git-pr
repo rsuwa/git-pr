@@ -141,8 +141,14 @@ log_copilot_debug() {
   local log_content="$7"
   local base
 
-  mkdir -p "$log_dir"
-  chmod 700 "$log_dir" 2>/dev/null || true
+  if ! mkdir -p "$log_dir"; then
+    log_warn "Skipping Copilot debug log because directory could not be created: $log_dir"
+    return 0
+  fi
+  if ! chmod 700 "$log_dir" 2>/dev/null; then
+    log_warn "Skipping Copilot debug log because directory could not be secured: $log_dir"
+    return 0
+  fi
   base="$log_dir/copilot-$log_tag"
   (
     umask 077
@@ -358,7 +364,7 @@ generate_title_body_with_copilot() {
 
   local temp_dir
   temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-pr.XXXXXX") || die "Failed to create temporary directory."
-  chmod 700 "$temp_dir" 2>/dev/null || true
+  chmod 700 "$temp_dir" 2>/dev/null || die "Failed to secure temporary directory: $temp_dir"
   register_cleanup_path "$temp_dir"
 
   local diff_file

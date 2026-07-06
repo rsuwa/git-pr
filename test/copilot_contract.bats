@@ -58,6 +58,26 @@ hide_host_copilot() {
   export PATH="$GIT_PR_FAKE_BIN:$BATS_TEST_DIRNAME/..:$tool_bin"
 }
 
+create_selective_chmod() {
+  local real_chmod
+  real_chmod=$(command -v chmod)
+  export GIT_PR_REAL_CHMOD="$real_chmod"
+  cat > "$GIT_PR_FAKE_BIN/chmod" <<'FAKE_CHMOD'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${GIT_PR_FAKE_CHMOD_FAIL_PRIVATE:-false}" = "true" ] && [ "${1-}" = "700" ]; then
+  exit 1
+fi
+if [ -n "${GIT_PR_FAKE_CHMOD_FAIL_PATH:-}" ] && [ "${2-}" = "$GIT_PR_FAKE_CHMOD_FAIL_PATH" ]; then
+  exit 1
+fi
+
+exec "$GIT_PR_REAL_CHMOD" "$@"
+FAKE_CHMOD
+  "$real_chmod" 755 "$GIT_PR_FAKE_BIN/chmod"
+}
+
 @test "copilot auto mode creates a new PR when none exists" {
   create_fake_copilot
 
@@ -273,4 +293,35 @@ hide_host_copilot() {
   grep -F "Input:" "$base.prompt"
   grep -F "diff --git a/git-pr b/git-pr" "$base.diff"
   grep -F "unparseable copilot response" "$base.response"
+}
+
+@test "copilot refuses to build prompt when temporary directory cannot be secured" {
+  create_fake_copilot
+  create_selective_chmod
+
+  run env \
+    GIT_PR_FAKE_CHMOD_FAIL_PRIVATE=true \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Failed to secure temporary directory:"* ]]
+  assert_no_command_logged "copilot"
+  assert_log_not_contains "gh pr create"
+}
+
+@test "copilot debug log is skipped when log directory cannot be secured" {
+  create_malformed_copilot
+  create_selective_chmod
+  log_dir="$BATS_TEST_TMPDIR/copilot-logs"
+
+  run env \
+    GIT_PR_COPILOT_LOG_DIR="$log_dir" \
+    GIT_PR_COPILOT_LOG_CONTENT=1 \
+    GIT_PR_FAKE_CHMOD_FAIL_PATH="$log_dir" \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Skipping Copilot debug log because directory could not be secured: $log_dir"* ]]
+  [ -z "$(find "$log_dir" -type f -print -quit 2>/dev/null)" ]
+  assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill"
 }
