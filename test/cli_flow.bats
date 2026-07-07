@@ -62,6 +62,18 @@ setup() {
   assert_log_contains "gh pr merge 123 --repo example/repo --auto --merge --match-head-commit local-head"
 }
 
+@test "auto-merge disable subcommand requests disable-auto only" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+
+  run "$BATS_TEST_DIRNAME/../git-pr" auto-merge --disable-auto-merge
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "gh pr merge 123 --repo example/repo --disable-auto"
+  assert_log_line_not_contains "gh pr merge 123" "--auto"
+  assert_log_line_not_contains "gh pr merge 123" "--match-head-commit"
+  [[ "$output" == *"INFO: Auto-merge disabled for PR #123."* ]]
+}
+
 @test "merge subcommand assembles merge request flags" {
   export GIT_PR_FAKE_PR_NUMBER=123
   export GIT_PR_FAKE_PR_HEAD_SHA=abc123
