@@ -14,12 +14,69 @@ After installation, run it as:
 git pr
 ```
 
-## Requirements
+## Set Up Dependencies
 
-- `git`
-- GitHub CLI (`gh`)
-- GitHub CLI authentication: `gh auth login`
-- Optional: GitHub Copilot CLI (`copilot`) for `git pr copilot`
+`git-pr` shells out to `git` and the GitHub CLI (`gh`). Install GitHub CLI from
+the official instructions, then authenticate it:
+
+```bash
+gh auth login
+gh auth status
+```
+
+For GitHub Enterprise Server, authenticate against the host used by the
+repository's `origin` remote:
+
+```bash
+gh auth login --hostname ghe.example.com
+gh auth status --hostname ghe.example.com
+```
+
+After installing `git-pr`, check the local setup with:
+
+```bash
+git pr doctor
+```
+
+Run `git pr doctor` inside the repository you want to use. Outside a Git
+repository, or in a repository without `origin`, it checks authentication for
+`github.com`.
+
+`git pr copilot` is optional and requires the standalone GitHub Copilot CLI
+(`copilot`) on `PATH`. `git-pr` calls `copilot` directly; do not install the old
+`github/gh-copilot` extension as a substitute. Use one of the official install
+methods:
+
+```bash
+# Cross-platform; requires Node.js 22 or later.
+npm install -g @github/copilot
+
+# macOS and Linux with Homebrew.
+brew install --cask copilot-cli
+
+# Windows with WinGet.
+winget install GitHub.Copilot
+```
+
+Then start Copilot CLI once to sign in and accept its prompts:
+
+```bash
+copilot
+git pr doctor --with-copilot
+```
+
+`git pr doctor --with-copilot` checks that the `copilot` executable is on
+`PATH`. Copilot account access, organization policy, and sign-in state are still
+verified by Copilot CLI when `git pr copilot` runs.
+
+References:
+
+- GitHub CLI install: <https://github.com/cli/cli#installation>
+- GitHub CLI auth: <https://cli.github.com/manual/gh_auth_login>
+- GitHub Copilot CLI install:
+  <https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli>
+- GitHub Copilot CLI usage:
+  <https://docs.github.com/copilot/how-tos/copilot-cli/cli-getting-started>
 
 ## Install
 
@@ -30,6 +87,7 @@ curl -fsSL https://github.com/rsuwa/git-pr/releases/latest/download/install.sh |
 The installer places `git-pr` in `~/.local/bin`. Make sure that directory is in
 your `PATH`. By default, the installer also downloads `SHA256SUMS` from the same
 release and verifies the downloaded `git-pr` before installing it.
+After installation, run `git pr doctor` to verify GitHub CLI authentication.
 The `latest` URL follows whichever GitHub Release is currently marked latest.
 For a reproducible install, pin both the downloaded installer and the payload
 URLs:
@@ -143,6 +201,13 @@ Update an existing pull request with Copilot while preserving existing content:
 git pr copilot --mode=update
 ```
 
+Check required dependencies and authentication:
+
+```bash
+git pr doctor
+git pr doctor --with-copilot
+```
+
 Enable auto-merge for the existing pull request on the current branch:
 
 ```bash
@@ -247,13 +312,17 @@ against `origin` before pushing.
 | `--admin` | Rejected with `git-pr` merge operations because it bypasses merge requirements. Use `gh pr merge --admin` directly if you intend to bypass them. |
 | `--match-head-commit <sha>` | Require the pull request head commit to match the given SHA when merging. If omitted, `git-pr` uses the local `HEAD` SHA. Requires `--enable-auto-merge`, `git pr auto-merge`, or `git pr merge`. |
 | `--disable-auto-merge` | Disable auto-merge on the current PR. Only valid with `git pr auto-merge`. |
+| `--with-copilot` | Require the optional Copilot CLI executable during `git pr doctor`. |
 | `--draft` | Create the pull request as a draft. |
 | `-w, --web` | Open the pull request in a browser. |
 | `--version` | Print `git-pr <version>` and exit without requiring `git` or `gh`. |
 
 ## Copilot
 
-`git pr copilot` is optional and requires the GitHub Copilot CLI.
+`git pr copilot` is optional and requires the standalone GitHub Copilot CLI
+(`copilot`). If `copilot` is missing, create mode falls back to the PR template
+when one was provided, or to GitHub CLI fill behavior otherwise. Update mode
+leaves the existing PR title/body unchanged.
 
 ```bash
 git pr copilot --mode=create --detail=verbose

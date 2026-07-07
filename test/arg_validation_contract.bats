@@ -284,6 +284,7 @@ run_git_pr_expect_error() {
     "--fill"
     "--template="
     "--match-head-commit="
+    "--with-copilot"
   )
 
   for case_data in "${cases[@]}"; do

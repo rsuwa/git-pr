@@ -6,6 +6,10 @@ set -euo pipefail
 GIT_PR_VERSION="0.3.1"
 COPILOT_UPDATE_START_MARKER="<!-- git-pr:copilot-update:start -->"
 COPILOT_UPDATE_END_MARKER="<!-- git-pr:copilot-update:end -->"
+GITHUB_CLI_INSTALL_URL="https://github.com/cli/cli#installation"
+GITHUB_CLI_AUTH_URL="https://cli.github.com/manual/gh_auth_login"
+COPILOT_CLI_INSTALL_URL="https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli"
+COPILOT_CLI_USAGE_URL="https://docs.github.com/copilot/how-tos/copilot-cli/cli-getting-started"
 cleanup_paths=()
 cleanup_trap_registered="false"
 copilot_private_temp_dir=""
@@ -16,6 +20,7 @@ Usage: git pr [create] [options]
        git pr auto-merge [options]
        git pr merge [options]
        git pr copilot [options]
+       git pr doctor [--with-copilot]
        git pr update
 
 Pushes the current branch, then creates or updates a GitHub pull request.
@@ -45,6 +50,7 @@ Options:
   --admin                  Rejected; use gh directly to bypass requirements
   --match-head-commit <s>  Require head SHA to match for merge
   --disable-auto-merge     Disable auto-merge for existing PR (auto-merge only)
+  --with-copilot           Doctor: require optional Copilot CLI on PATH
   --draft                  Create as draft
   -w, --web                Open the PR in a browser
   --version                Show version
@@ -71,6 +77,126 @@ die() {
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"
+}
+
+require_gh_cli() {
+  command -v gh >/dev/null 2>&1 || \
+    die "Missing command: gh. Install GitHub CLI: $GITHUB_CLI_INSTALL_URL. Then run: gh auth login"
+}
+
+github_cli_auth_message() {
+  local host="$1"
+
+  printf 'Run: gh auth login --hostname %s. Check with: gh auth status --hostname %s. See: %s' \
+    "$host" "$host" "$GITHUB_CLI_AUTH_URL"
+}
+
+copilot_cli_install_message() {
+  printf 'Install GitHub Copilot CLI: %s' "$COPILOT_CLI_INSTALL_URL"
+}
+
+doctor_command_status() {
+  local command_name="$1"
+  local label="$2"
+
+  if command -v "$command_name" >/dev/null 2>&1; then
+    log_info "$label: found"
+    return 0
+  fi
+
+  log_warn "$label: missing"
+  return 1
+}
+
+doctor_detect_github_host() {
+  local doctor_repo_root
+  local doctor_origin_url
+  local doctor_github_host
+
+  doctor_repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    printf '%s\n%s' \
+      'github.com' \
+      'No git repository found; checking GitHub CLI auth for github.com.'
+    return 0
+  }
+
+  doctor_origin_url=$(git -C "$doctor_repo_root" remote get-url origin 2>/dev/null) || {
+    printf '%s\n%s' \
+      'github.com' \
+      "Remote 'origin' not found; checking GitHub CLI auth for github.com."
+    return 0
+  }
+
+  doctor_github_host=$(github_host_from_origin_url "$doctor_origin_url") || {
+    log_warn "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$doctor_origin_url")"
+    return 1
+  }
+
+  printf '%s' "$doctor_github_host"
+}
+
+run_doctor() {
+  local with_copilot="$1"
+  local status=0
+  local git_ok="false"
+  local gh_ok="false"
+  local github_host="github.com"
+  local doctor_host_note=""
+  local doctor_host_output
+
+  log_info "Checking git-pr dependencies"
+
+  if doctor_command_status git "git"; then
+    git_ok="true"
+  else
+    status=1
+  fi
+
+  if doctor_command_status gh "GitHub CLI"; then
+    gh_ok="true"
+  else
+    log_warn "GitHub CLI setup: install gh from $GITHUB_CLI_INSTALL_URL"
+    status=1
+  fi
+
+  if [ "$gh_ok" = "true" ]; then
+    if [ "$git_ok" = "true" ]; then
+      if ! doctor_host_output=$(doctor_detect_github_host); then
+        status=1
+        github_host="github.com"
+      else
+        github_host="${doctor_host_output%%$'\n'*}"
+        if [ "$doctor_host_output" != "$github_host" ]; then
+          doctor_host_note="${doctor_host_output#*$'\n'}"
+        fi
+      fi
+      if [ -n "$doctor_host_note" ]; then
+        log_info "$doctor_host_note"
+      fi
+    fi
+
+    if gh auth status --hostname "$github_host" >/dev/null 2>&1; then
+      log_info "GitHub CLI auth: ok ($github_host)"
+    else
+      log_warn "GitHub CLI auth: failed ($github_host). $(github_cli_auth_message "$github_host")"
+      status=1
+    fi
+  fi
+
+  if command -v copilot >/dev/null 2>&1; then
+    log_info "Copilot CLI: found on PATH"
+  elif [ "$with_copilot" = "true" ]; then
+    log_warn "Copilot CLI: missing. $(copilot_cli_install_message)"
+    status=1
+  else
+    log_info "Copilot CLI: not found (optional; needed only for 'git pr copilot'). $(copilot_cli_install_message)"
+  fi
+
+  if [ "$status" -eq 0 ]; then
+    log_info "Doctor checks passed."
+  fi
+
+  return "$status"
 }
 
 require_option_value() {
@@ -511,7 +637,7 @@ EOF
 
   local response=""
   response=$(cd "$repo_root" && copilot -s --no-custom-instructions -p "@$prompt_file") || {
-    log_warn "Copilot CLI failed; falling back."
+    log_warn "Copilot CLI failed; falling back. Run 'copilot' once to sign in or check access. See: $COPILOT_CLI_USAGE_URL"
     log_copilot_debug "copilot-cli-failed" "$copilot_log_dir" "$copilot_log_tag" "$prompt_file" "$diff_file" "$response" "$copilot_log_content"
     return 1
   }
@@ -548,7 +674,7 @@ EOF
 
 can_run_copilot_generation() {
   if ! command -v copilot >/dev/null 2>&1; then
-    log_warn "Copilot CLI not found; falling back."
+    log_warn "Copilot CLI not found; falling back. $(copilot_cli_install_message)"
     return 1
   fi
 
@@ -900,11 +1026,29 @@ handle_update_action() {
     return 0
   fi
 
-  if has_update_subcommand_pr_option; then
+  if [ "$doctor_with_copilot" = "true" ] || has_update_subcommand_pr_option; then
     die "update subcommand does not accept PR options."
   fi
   update_self
   exit 0
+}
+
+handle_doctor_action() {
+  if [ "$action" != "doctor" ]; then
+    if [ "$doctor_with_copilot" = "true" ]; then
+      die "--with-copilot requires 'git pr doctor'."
+    fi
+    return 0
+  fi
+
+  if has_update_subcommand_pr_option; then
+    die "doctor subcommand only accepts --with-copilot."
+  fi
+
+  if run_doctor "$doctor_with_copilot"; then
+    exit 0
+  fi
+  exit 1
 }
 
 validate_common_options() {
@@ -1531,6 +1675,30 @@ is_valid_github_repo_path() {
   esac
 }
 
+is_valid_github_host() {
+  local host="$1"
+  local label
+
+  case "$host" in
+    ""|.*|*.|*..*|*[^A-Za-z0-9.-]*)
+      return 1
+      ;;
+  esac
+
+  while :; do
+    label="${host%%.*}"
+    case "$label" in
+      ""|-*|*-)
+        return 1
+        ;;
+    esac
+    [ "$host" != "$label" ] || break
+    host="${host#*.}"
+  done
+
+  return 0
+}
+
 github_repo_from_origin_url() {
   local url="$1"
   local host=""
@@ -1570,6 +1738,7 @@ github_repo_from_origin_url() {
   esac
 
   [ -n "$host" ] || return 1
+  is_valid_github_host "$host" || return 1
 
   path="${path%.git}"
   is_valid_github_repo_path "$path" || return 1
@@ -1615,6 +1784,7 @@ github_host_from_origin_url() {
   esac
 
   [ -n "$host" ] || return 1
+  is_valid_github_host "$host" || return 1
   printf '%s' "$host"
 }
 
@@ -1708,6 +1878,10 @@ if [ $# -gt 0 ]; then
       action="copilot"
       shift
       ;;
+    doctor)
+      action="doctor"
+      shift
+      ;;
     update)
       action="update"
       shift
@@ -1770,6 +1944,7 @@ copilot_existing_body=""
 copilot_existing_body_loaded="false"
 copilot_update_effective="false"
 copilot_mode_effective="auto"
+doctor_with_copilot="false"
 template_resolved="false"
 label_args=()
 reviewer_args=()
@@ -2002,6 +2177,10 @@ while [ $# -gt 0 ]; do
       auto_merge_disable="true"
       shift
       ;;
+    --with-copilot)
+      doctor_with_copilot="true"
+      shift
+      ;;
     --draft)
       draft="true"
       draft_explicit="true"
@@ -2032,6 +2211,7 @@ if [ "$action" = "copilot" ]; then
 fi
 
 handle_update_action
+handle_doctor_action
 validate_common_options
 validate_merge_options
 if [ "$action" = "auto-merge" ]; then
@@ -2039,7 +2219,7 @@ if [ "$action" = "auto-merge" ]; then
 fi
 
 require_cmd git
-require_cmd gh
+require_gh_cli
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "Not a git repository."
 current_branch=$(git -C "$repo_root" branch --show-current)
@@ -2056,7 +2236,7 @@ github_host=$(github_host_from_origin_url "$origin_url") || die "Remote 'origin'
 github_owner=$(github_owner_from_repo "$github_repo")
 
 if ! gh auth status --hostname "$github_host" >/dev/null 2>&1; then
-  die "GitHub CLI is not authenticated for $github_host. Run: gh auth login --hostname $github_host"
+  die "GitHub CLI is not authenticated for $github_host. $(github_cli_auth_message "$github_host")"
 fi
 
 if [ "$action" = "auto-merge" ] || [ "$action" = "merge" ]; then

@@ -198,6 +198,7 @@ sha256_of() {
     "$BATS_TEST_DIRNAME/../install.sh"
 
   [ "$status" -eq 0 ]
+  [[ "$output" == *"Run 'git pr doctor' to check GitHub CLI setup."* ]]
   [ -x "$install_dir/git-pr" ]
   grep -F "curl https://example.invalid/releases/latest/download/git-pr" "$curl_log"
   grep -F "curl https://example.invalid/releases/latest/download/SHA256SUMS" "$curl_log"

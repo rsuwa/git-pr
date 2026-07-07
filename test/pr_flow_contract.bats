@@ -98,6 +98,19 @@ setup() {
   assert_log_not_contains "gh pr create"
 }
 
+@test "unsafe HTTPS origin host is rejected before auth guidance or push" {
+  export GIT_PR_FAKE_ORIGIN_URL="https://github.com;echo-pwn/example/repo.git"
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Remote 'origin' is not a supported GitHub repository URL: https://github.com;echo-pwn/example/repo.git"* ]]
+  [[ "$output" != *"gh auth login --hostname github.com;echo-pwn"* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh auth status"
+  assert_log_not_contains "gh pr create"
+}
+
 @test "GitHub Enterprise origin uses hostname for auth and repo" {
   export GIT_PR_FAKE_ORIGIN_URL="git@ghe.example.com:octo/repo.git"
   export GIT_PR_FAKE_REPO="ghe.example.com/octo/repo"

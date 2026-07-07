@@ -196,3 +196,4 @@ ensure_install_target_is_regular_executable "$install_path"
 
 echo "Installed git-pr to $install_path"
 echo "Make sure $install_dir is in PATH."
+echo "Run 'git pr doctor' to check GitHub CLI setup."

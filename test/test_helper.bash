@@ -35,6 +35,7 @@ case "${1-}" in
   rev-parse)
     case "${2-}" in
       --show-toplevel)
+        [ "${GIT_PR_FAKE_IS_REPO:-true}" = "true" ] || exit 1
         printf '%s\n' "$GIT_PR_FAKE_REPO_ROOT"
         ;;
       --abbrev-ref)
