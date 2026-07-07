@@ -229,6 +229,7 @@ case "${1-} ${2-}" in
     ;;
   "pr view")
     json_field=""
+    jq_expr=""
     repo="$(arg_after --repo "$@" || true)"
     if [ -n "$repo" ] && [ "$repo" != "${GIT_PR_FAKE_REPO:-example/repo}" ]; then
       printf 'fake gh: unexpected repo: %s\n' "$repo" >&2
@@ -241,6 +242,13 @@ case "${1-} ${2-}" in
         break
       fi
     done
+    if [ -n "$json_field" ]; then
+      jq_expr="$(arg_after --jq "$@" || true)"
+      if [ "$jq_expr" != ".$json_field // \"\"" ]; then
+        printf 'fake gh: pr view missing or unexpected --jq for %s: %s\n' "$json_field" "$jq_expr" >&2
+        exit 1
+      fi
+    fi
     if [ -n "$json_field" ]; then
       case "$json_field" in
         number)
@@ -399,6 +407,42 @@ __GIT_PR_END__
 COPILOT_RESPONSE
 FAKE_COPILOT
   chmod 755 "$GIT_PR_FAKE_BIN/copilot"
+}
+
+create_failing_download_tools() {
+  cat > "$GIT_PR_FAKE_BIN/curl" <<'FAKE_CURL'
+#!/usr/bin/env bash
+set -euo pipefail
+
+{
+  printf 'curl'
+  for arg in "$@"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n'
+} >> "$GIT_PR_FAKE_LOG"
+
+printf 'fake curl should not be called\n' >&2
+exit 97
+FAKE_CURL
+  chmod 755 "$GIT_PR_FAKE_BIN/curl"
+
+  cat > "$GIT_PR_FAKE_BIN/wget" <<'FAKE_WGET'
+#!/usr/bin/env bash
+set -euo pipefail
+
+{
+  printf 'wget'
+  for arg in "$@"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n'
+} >> "$GIT_PR_FAKE_LOG"
+
+printf 'fake wget should not be called\n' >&2
+exit 97
+FAKE_WGET
+  chmod 755 "$GIT_PR_FAKE_BIN/wget"
 }
 
 assert_log_contains() {

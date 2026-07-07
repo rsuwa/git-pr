@@ -454,6 +454,17 @@ setup() {
   assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
 }
 
+@test "staged-only dirty index emits warning and still pushes before create" {
+  export GIT_PR_FAKE_INDEX_DIRTY=true
+
+  run "$GIT_PR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Working tree has uncommitted changes. They won't be included in the PR."* ]]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
+}
+
 @test "existing origin upstream uses plain git push" {
   export GIT_PR_FAKE_HAS_UPSTREAM=true
 
