@@ -1925,6 +1925,87 @@ merge_pull_request() {
   log_info "Merge requested for PR #$pr_number. GitHub CLI may merge immediately or add the PR to a merge queue when required."
 }
 
+push_current_branch() {
+  local upstream_ref
+  local push_refspec="HEAD:refs/heads/$current_branch"
+
+  if upstream_ref=$(git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null); then
+    if [ "$upstream_ref" != "origin/$current_branch" ]; then
+      die "Existing upstream must be origin/$current_branch for this origin-only workflow; found $upstream_ref."
+    fi
+    log_info "Pushing current branch"
+    git -C "$repo_root" push origin "$push_refspec"
+  else
+    log_info "Pushing and setting upstream to origin/$current_branch"
+    git -C "$repo_root" push -u origin "$push_refspec"
+  fi
+}
+
+copilot_fallback() {
+  if [ "$copilot_update_effective" = "true" ]; then
+    log_warn "Copilot failed; leaving existing PR title/body unchanged."
+    use_copilot="false"
+    fill="false"
+    return 0
+  fi
+
+  if [ -n "$template_file" ]; then
+    log_warn "Falling back to template for PR body."
+    use_copilot="false"
+    fill="false"
+  else
+    log_warn "Falling back to --fill."
+    use_copilot="false"
+    fill="true"
+    fill_mode="normal"
+  fi
+}
+
+load_repository_context() {
+  require_cmd git
+  require_gh_cli
+
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "Not a git repository."
+  current_branch=$(git -C "$repo_root" branch --show-current)
+  [ -n "$current_branch" ] || die "Detached HEAD. Checkout a branch first."
+  if [ "$use_copilot" = "true" ]; then
+    load_git_pr_config
+  fi
+
+  if ! origin_url=$(git -C "$repo_root" remote get-url origin 2>/dev/null); then
+    die "Remote 'origin' not found."
+  fi
+  github_repo=$(github_repo_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$origin_url")"
+  github_host=$(github_host_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$origin_url")"
+  github_owner=$(github_owner_from_repo "$github_repo")
+
+  if ! gh auth status --hostname "$github_host" >/dev/null 2>&1; then
+    die "GitHub CLI is not authenticated for $github_host. $(github_cli_auth_message "$github_host")"
+  fi
+}
+
+handle_merge_action() {
+  if [ "$action" != "auto-merge" ] && [ "$action" != "merge" ]; then
+    return 0
+  fi
+
+  pr_number=$(get_current_pr_number)
+  [ -n "$pr_number" ] || die "No open PR found for current branch."
+
+  if [ "$action" = "auto-merge" ] && [ "$auto_merge_disable" = "true" ]; then
+    gh pr merge "$pr_number" --repo "$github_repo" --disable-auto
+    log_info "Auto-merge disabled for PR #$pr_number."
+    exit 0
+  fi
+
+  if [ "$action" = "auto-merge" ]; then
+    enable_auto_merge "$pr_number"
+  else
+    merge_pull_request "$pr_number"
+  fi
+  exit 0
+}
+
 action="create"
 if [ $# -gt 0 ]; then
   case "$1" in
@@ -2284,44 +2365,8 @@ if [ "$action" = "auto-merge" ]; then
   auto_merge="true"
 fi
 
-require_cmd git
-require_gh_cli
-
-repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "Not a git repository."
-current_branch=$(git -C "$repo_root" branch --show-current)
-[ -n "$current_branch" ] || die "Detached HEAD. Checkout a branch first."
-if [ "$use_copilot" = "true" ]; then
-  load_git_pr_config
-fi
-
-if ! origin_url=$(git -C "$repo_root" remote get-url origin 2>/dev/null); then
-  die "Remote 'origin' not found."
-fi
-github_repo=$(github_repo_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$origin_url")"
-github_host=$(github_host_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$origin_url")"
-github_owner=$(github_owner_from_repo "$github_repo")
-
-if ! gh auth status --hostname "$github_host" >/dev/null 2>&1; then
-  die "GitHub CLI is not authenticated for $github_host. $(github_cli_auth_message "$github_host")"
-fi
-
-if [ "$action" = "auto-merge" ] || [ "$action" = "merge" ]; then
-  pr_number=$(get_current_pr_number)
-  [ -n "$pr_number" ] || die "No open PR found for current branch."
-
-  if [ "$action" = "auto-merge" ] && [ "$auto_merge_disable" = "true" ]; then
-    gh pr merge "$pr_number" --repo "$github_repo" --disable-auto
-    log_info "Auto-merge disabled for PR #$pr_number."
-    exit 0
-  fi
-
-  if [ "$action" = "auto-merge" ]; then
-    enable_auto_merge "$pr_number"
-  else
-    merge_pull_request "$pr_number"
-  fi
-  exit 0
-fi
+load_repository_context
+handle_merge_action
 
 pr_number=$(get_current_pr_number)
 base_ref=""
@@ -2397,41 +2442,11 @@ if ! git -C "$repo_root" diff --quiet || ! git -C "$repo_root" diff --cached --q
   log_warn "Working tree has uncommitted changes. They won't be included in the PR."
 fi
 
-push_refspec="HEAD:refs/heads/$current_branch"
-if upstream_ref=$(git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null); then
-  if [ "$upstream_ref" != "origin/$current_branch" ]; then
-    die "Existing upstream must be origin/$current_branch for this origin-only workflow; found $upstream_ref."
-  fi
-  log_info "Pushing current branch"
-  git -C "$repo_root" push origin "$push_refspec"
-else
-  log_info "Pushing and setting upstream to origin/$current_branch"
-  git -C "$repo_root" push -u origin "$push_refspec"
-fi
+push_current_branch
 
 if [ -z "$pr_number" ]; then
   pr_number=$(get_current_pr_number)
 fi
-
-copilot_fallback() {
-  if [ "$copilot_update_effective" = "true" ]; then
-    log_warn "Copilot failed; leaving existing PR title/body unchanged."
-    use_copilot="false"
-    fill="false"
-    return 0
-  fi
-
-  if [ -n "$template_file" ]; then
-    log_warn "Falling back to template for PR body."
-    use_copilot="false"
-    fill="false"
-  else
-    log_warn "Falling back to --fill."
-    use_copilot="false"
-    fill="true"
-    fill_mode="normal"
-  fi
-}
 
 if [ -n "$pr_number" ]; then
   log_info "Existing PR #$pr_number found for $current_branch."
