@@ -56,7 +56,13 @@ brew install --cask copilot-cli
 
 # Windows with WinGet.
 winget install GitHub.Copilot
+
+# macOS and Linux official install script.
+curl -fsSL https://gh.io/copilot-install | bash
 ```
+
+If your environment restricts `curl | bash`, use npm, Homebrew, or WinGet
+instead.
 
 Then start Copilot CLI once to sign in and accept its prompts:
 
