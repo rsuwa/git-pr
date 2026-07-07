@@ -127,6 +127,11 @@ doctor_detect_github_host() {
     return 0
   }
 
+  if ! github_repo_from_origin_url "$doctor_origin_url" >/dev/null; then
+    log_warn "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$doctor_origin_url")"
+    return 1
+  fi
+
   doctor_github_host=$(github_host_from_origin_url "$doctor_origin_url") || {
     log_warn "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$doctor_origin_url")"
     return 1
@@ -1681,15 +1686,31 @@ count_commits_since_base() {
 }
 
 is_valid_github_repo_path() {
+  local owner
+  local repo
+
   case "$1" in
     ""|/*|*/*/*)
       return 1
       ;;
     */*)
-      return 0
+      owner="${1%/*}"
+      repo="${1#*/}"
+      is_valid_github_repo_part "$owner" && is_valid_github_repo_part "$repo"
       ;;
     *)
       return 1
+      ;;
+  esac
+}
+
+is_valid_github_repo_part() {
+  case "$1" in
+    ""|.|..|*[^A-Za-z0-9._-]*)
+      return 1
+      ;;
+    *)
+      return 0
       ;;
   esac
 }
