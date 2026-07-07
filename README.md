@@ -281,8 +281,9 @@ test local release-style install/update flows, and only then upload the assets.
 
 `git-pr` only works with a Git remote named `origin`. It checks for `origin`,
 uses the GitHub repository default branch when resolving the default base, and
-pushes new branches with `git push -u origin HEAD`. Existing upstreams must be
-`origin/<current-branch>`. Selecting another remote is not supported.
+pushes only the current branch with an explicit `HEAD:refs/heads/<current-branch>`
+refspec. Existing upstreams must be `origin/<current-branch>`. Selecting another
+remote is not supported.
 
 Default base branch resolution order is:
 
