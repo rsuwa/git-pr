@@ -160,6 +160,26 @@ setup() {
   assert_log_not_contains "gh pr create"
 }
 
+@test "base branch rejects raw refspec before fetch or push" {
+  run "$GIT_PR" --base "main:refs/heads/pwn"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Invalid base branch: main:refs/heads/pwn"* ]]
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
+@test "base branch rejects leading dash before fetch or push" {
+  run "$GIT_PR" --base "-bad"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Invalid base branch: -bad"* ]]
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
 @test "rev-list count failure fails before pushing" {
   export GIT_PR_FAKE_REV_LIST_COUNT_STATUS=2
 
@@ -186,9 +206,9 @@ setup() {
   run "$GIT_PR" --base develop
 
   [ "$status" -eq 0 ]
-  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin develop"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin refs/heads/develop:refs/remotes/origin/develop"
   assert_log_order \
-    "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin develop" \
+    "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin refs/heads/develop:refs/remotes/origin/develop" \
     "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count origin/develop..HEAD"
 }
 
@@ -413,7 +433,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_contains "gh pr view 123 --repo example/repo --json baseRefName --jq .baseRefName\\ //\\ \\\"\\\""
-  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin release"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin refs/heads/release:refs/remotes/origin/release"
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT log --pretty=-\\ %s origin/release..HEAD"
   [[ "$output" == *"INFO: Replacing existing PR body because a fill option was specified."* ]]
   [[ "$output" == *"INFO: Updated PR #123: body."* ]]
