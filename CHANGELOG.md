@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.3.1 - 2026-07-07
+
+- Clarify `git pr merge` messaging and documentation around merge queues and
+  admin bypass behavior.
+
 ## 0.3.0 - 2026-07-06
 
 - Remove deprecated option aliases: `--copilot`, `--copilot-verbose`,
