@@ -11,9 +11,10 @@
 
 - Remove deprecated option aliases: `--copilot`, `--copilot-verbose`,
   `--copilot-update`, and `--auto-merge`.
-- Replace the deprecated `git pr merge` auto-merge alias with a merge request
-  command that reuses the existing merge method and head-SHA safety checks
-  without enabling auto-merge.
+- Change `git pr merge` from a deprecated alias for `git pr auto-merge` into a
+  separate merge request command. It now calls `gh pr merge` without `--auto`
+  while keeping the existing merge method and head-SHA safety checks. Use
+  `git pr auto-merge` for the old auto-merge behavior.
 
 ## 0.2.1 - 2026-07-06
 
