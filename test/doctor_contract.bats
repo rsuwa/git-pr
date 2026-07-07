@@ -129,6 +129,19 @@ path_without_host_optional_tools() {
   assert_no_git_push
 }
 
+@test "doctor rejects unsafe origin repo paths before auth guidance" {
+  run env \
+    GIT_PR_FAKE_ORIGIN_URL='https://github.com/bad"owner/repo.git' \
+    GIT_PR_FAKE_GH_AUTH=false \
+    "$BATS_TEST_DIRNAME/../git-pr" doctor
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'WARN: Remote '\''origin'\'' is not a supported GitHub repository URL: https://github.com/bad"owner/repo.git'* ]]
+  [[ "$output" == *"Run: gh auth login --hostname github.com."* ]]
+  assert_log_contains "gh auth status --hostname github.com"
+  assert_no_git_push
+}
+
 @test "--with-copilot is only accepted by doctor" {
   run "$BATS_TEST_DIRNAME/../git-pr" --with-copilot
 

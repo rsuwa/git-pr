@@ -127,6 +127,11 @@ doctor_detect_github_host() {
     return 0
   }
 
+  if ! github_repo_from_origin_url "$doctor_origin_url" >/dev/null; then
+    log_warn "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$doctor_origin_url")"
+    return 1
+  fi
+
   doctor_github_host=$(github_host_from_origin_url "$doctor_origin_url") || {
     log_warn "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$doctor_origin_url")"
     return 1
