@@ -98,6 +98,30 @@ setup() {
   assert_log_not_contains "gh pr create"
 }
 
+@test "unsafe origin owner is rejected before jq filter or push" {
+  export GIT_PR_FAKE_ORIGIN_URL='https://github.com/bad"owner/repo.git'
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'ERROR: Remote '\''origin'\'' is not a supported GitHub repository URL: https://github.com/bad"owner/repo.git'* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr list"
+  assert_log_not_contains "gh pr create"
+}
+
+@test "unsafe origin repository name is rejected before jq filter or push" {
+  export GIT_PR_FAKE_ORIGIN_URL='https://github.com/example/repo\name.git'
+
+  run "$GIT_PR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'ERROR: Remote '\''origin'\'' is not a supported GitHub repository URL: https://github.com/example/repo\name.git'* ]]
+  assert_no_git_push
+  assert_log_not_contains "gh pr list"
+  assert_log_not_contains "gh pr create"
+}
+
 @test "unsafe HTTPS origin host is rejected before auth guidance or push" {
   export GIT_PR_FAKE_ORIGIN_URL="https://github.com;echo-pwn/example/repo.git"
 
