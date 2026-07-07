@@ -68,6 +68,20 @@ case "${1-}" in
       exit 1
     fi
     ;;
+  check-ref-format)
+    if [ "${2-}" = "--branch" ] && [ -n "${3-}" ]; then
+      case "$3" in
+        -*|*:*|*..*|*~*|*^*|*\\*|*[[:space:]]*|*'?'*|*'['*|*//*|*.|*/.|*.lock|*@{*|@)
+          exit 1
+          ;;
+        *)
+          printf '%s\n' "$3"
+          ;;
+      esac
+    else
+      exit 1
+    fi
+    ;;
   config)
     if [ "${2-}" = "--get" ] && [ "${3-}" = "branch.$GIT_PR_FAKE_BRANCH.gh-merge-base" ]; then
       [ -n "${GIT_PR_FAKE_MERGE_BASE:-}" ] || exit 1

@@ -218,6 +218,18 @@ require_nonempty_option_value() {
   fi
 }
 
+validate_base_branch_name() {
+  local branch="$1"
+  local normalized
+
+  if ! normalized=$(git check-ref-format --branch "$branch" 2>/dev/null); then
+    die "Invalid base branch: $branch"
+  fi
+  if [ "$normalized" != "$branch" ]; then
+    die "Invalid base branch: $branch"
+  fi
+}
+
 cleanup_registered_paths() {
   local path
 
@@ -1609,6 +1621,7 @@ resolve_create_base_branch() {
     resolve_default_base_branch
   fi
 
+  validate_base_branch_name "$base_branch"
   if [ "$current_branch" = "$base_branch" ]; then
     die "You are on '$base_branch'. Create a feature branch first."
   fi
@@ -1623,10 +1636,15 @@ resolve_existing_generation_base_branch() {
   if [ -z "$base_branch" ]; then
     resolve_default_base_branch
   fi
+  validate_base_branch_name "$base_branch"
 }
 
 ensure_base_ref_for_generation() {
-  git -C "$repo_root" fetch origin "$base_branch" >/dev/null 2>&1 || \
+  local fetch_refspec
+
+  validate_base_branch_name "$base_branch"
+  fetch_refspec="refs/heads/$base_branch:refs/remotes/origin/$base_branch"
+  git -C "$repo_root" fetch origin "$fetch_refspec" >/dev/null 2>&1 || \
     die "Failed to fetch origin/$base_branch."
 
   if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/$base_branch"; then
@@ -1643,6 +1661,7 @@ ensure_base_branch_exists_for_retarget() {
   local line
   local ref
 
+  validate_base_branch_name "$base_branch"
   if ! output=$(git -C "$repo_root" ls-remote --exit-code --heads origin "$base_branch" 2>/dev/null); then
     die "Base branch '$base_branch' was not found on origin. Create it or choose an existing branch with --base."
   fi
