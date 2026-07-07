@@ -33,6 +33,44 @@ run_git_pr_expect_error() {
   assert_log_not_contains "gh pr merge"
 }
 
+run_git_pr_update_expect_error() {
+  local expected="$1"
+  local update_target="$BATS_TEST_TMPDIR/blocked-update/git-pr"
+  shift
+
+  : > "$GIT_PR_FAKE_LOG"
+  mkdir -p "$(dirname "$update_target")"
+  create_failing_download_tools
+
+  run env \
+    GIT_PR_UPDATE_INSTALL_PATH="$update_target" \
+    GIT_PR_UPDATE_URL="https://example.invalid/git-pr" \
+    GIT_PR_UPDATE_CHECKSUM_URL="https://example.invalid/SHA256SUMS" \
+    "$BATS_TEST_DIRNAME/../git-pr" "$@"
+
+  [ "$status" -ne 0 ] || {
+    printf 'Expected failure for: git-pr' >&2
+    printf ' %q' "$@" >&2
+    printf '\nOutput:\n%s\n' "$output" >&2
+    return 1
+  }
+
+  [[ "$output" == *"ERROR: $expected"* ]] || {
+    printf 'Expected error for: git-pr' >&2
+    printf ' %q' "$@" >&2
+    printf '\nExpected: ERROR: %s\nOutput:\n%s\n' "$expected" "$output" >&2
+    return 1
+  }
+
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+  assert_log_not_contains "gh pr edit"
+  assert_log_not_contains "gh pr merge"
+  assert_no_command_logged "curl"
+  assert_no_command_logged "wget"
+  [ ! -e "$update_target" ]
+}
+
 @test "missing values for value-taking options fail before push" {
   local option
   local -a options=(
@@ -278,10 +316,31 @@ run_git_pr_expect_error() {
   local case_data
   local -a cases=(
     "--base main"
-    "--disable-auto-merge"
-    "--language ja"
+    "--draft"
+    "--web"
+    "--title Manual-title"
+    "--body Manual-body"
+    "--body-file $BATS_TEST_TMPDIR/body.md"
+    "--template pull_request_template.md"
+    "--editor"
     "--label bug"
+    "--reviewer alice"
+    "--assignee bob"
+    "--mode create"
+    "--detail verbose"
+    "--language ja"
+    "--diff-exclude docs/**"
     "--fill"
+    "--fill-first"
+    "--fill-verbose"
+    "--no-fill"
+    "--no-edit"
+    "--enable-auto-merge"
+    "--merge-method squash"
+    "--delete-branch"
+    "--admin"
+    "--match-head-commit local-head"
+    "--disable-auto-merge"
     "--template="
     "--match-head-commit="
     "--with-copilot"
@@ -289,15 +348,15 @@ run_git_pr_expect_error() {
 
   for case_data in "${cases[@]}"; do
     read -r -a args <<< "$case_data"
-    run_git_pr_expect_error "update subcommand does not accept PR options." update "${args[@]}"
+    run_git_pr_update_expect_error "update subcommand does not accept PR options." update "${args[@]}"
   done
 }
 
 @test "update subcommand rejects empty-valued PR options" {
-  run_git_pr_expect_error "update subcommand does not accept PR options." update --title ""
-  run_git_pr_expect_error "update subcommand does not accept PR options." update --body ""
-  run_git_pr_expect_error "update subcommand does not accept PR options." update --body-file ""
-  run_git_pr_expect_error "update subcommand does not accept PR options." update --label ""
-  run_git_pr_expect_error "update subcommand does not accept PR options." update --reviewer ""
-  run_git_pr_expect_error "update subcommand does not accept PR options." update --assignee ""
+  run_git_pr_update_expect_error "update subcommand does not accept PR options." update --title ""
+  run_git_pr_update_expect_error "update subcommand does not accept PR options." update --body ""
+  run_git_pr_update_expect_error "update subcommand does not accept PR options." update --body-file ""
+  run_git_pr_update_expect_error "update subcommand does not accept PR options." update --label ""
+  run_git_pr_update_expect_error "update subcommand does not accept PR options." update --reviewer ""
+  run_git_pr_update_expect_error "update subcommand does not accept PR options." update --assignee ""
 }

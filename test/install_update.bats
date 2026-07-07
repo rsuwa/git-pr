@@ -16,22 +16,11 @@ write_fake_curl() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-output=""
-url=""
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -o)
-      output="$2"
-      shift 2
-      ;;
-    *)
-      url="$1"
-      shift
-      ;;
-  esac
-done
-
-[ -n "$output" ] || exit 1
+[ "$#" -eq 4 ] || exit 1
+[ "${1-}" = "-fsSL" ] || exit 1
+url="$2"
+[ "${3-}" = "-o" ] || exit 1
+output="$4"
 if [ -n "${GIT_PR_TEST_CURL_LOG:-}" ]; then
   printf 'curl %s\n' "$url" >> "$GIT_PR_TEST_CURL_LOG"
 fi
@@ -60,22 +49,11 @@ write_checksum_failing_curl() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-output=""
-url=""
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -o)
-      output="$2"
-      shift 2
-      ;;
-    *)
-      url="$1"
-      shift
-      ;;
-  esac
-done
-
-[ -n "$output" ] || exit 1
+[ "$#" -eq 4 ] || exit 1
+[ "${1-}" = "-fsSL" ] || exit 1
+url="$2"
+[ "${3-}" = "-o" ] || exit 1
+output="$4"
 case "$url" in
   */SHA256SUMS)
     exit 22
@@ -566,6 +544,25 @@ OTHER
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: Refusing to install over directory target: $install_path"* ]]
+  [ -d "$install_path" ]
+}
+
+@test "update refuses a directory target created before final move" {
+  copy_current_git_pr_for_update
+  install_path="$GIT_PR_TEST_BIN/git-pr"
+  write_directory_swap_chmod
+  expected="$(sha256_of "$GIT_PR_TEST_DOWNLOAD")"
+
+  run env \
+    -u GIT_PR_UPDATE_CHECKSUM_URL \
+    GIT_PR_TEST_REAL_CHMOD="$(command -v chmod)" \
+    GIT_PR_TEST_INSTALL_PATH="$install_path" \
+    GIT_PR_UPDATE_URL="https://example.invalid/releases/latest/download/git-pr" \
+    GIT_PR_UPDATE_SHA256="$expected" \
+    "$GIT_PR_TEST_BIN/git-pr" update
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Refusing to update directory target: $install_path"* ]]
   [ -d "$install_path" ]
 }
 
