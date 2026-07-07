@@ -316,8 +316,8 @@ setup() {
   run "$GIT_PR"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature" "gh pr create"
 }
 
 @test "create auto-merge accepts merge-method equals form" {
@@ -335,7 +335,7 @@ setup() {
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--title Updated\\ title" "--body Updated\\ body"
   [[ "$output" == *"INFO: Updated PR #123: title, body."* ]]
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr edit 123"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature" "gh pr edit 123"
 }
 
 @test "existing PR explicit title and body do not require local base" {
@@ -458,7 +458,7 @@ setup() {
   run "$GIT_PR" --no-fill
 
   [ "$status" -eq 0 ]
-  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
   assert_log_not_contains "gh pr edit"
   [[ "$output" == *"INFO: No PR fields to update."* ]]
 }
@@ -470,8 +470,8 @@ setup() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARN: Working tree has uncommitted changes. They won't be included in the PR."* ]]
-  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature" "gh pr create"
 }
 
 @test "staged-only dirty index emits warning and still pushes before create" {
@@ -481,19 +481,19 @@ setup() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARN: Working tree has uncommitted changes. They won't be included in the PR."* ]]
-  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD" "gh pr create"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature" "gh pr create"
 }
 
-@test "existing origin upstream uses plain git push" {
+@test "existing origin upstream uses explicit refspec push without setting upstream" {
   export GIT_PR_FAKE_HAS_UPSTREAM=true
 
   run "$GIT_PR"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push"
-  assert_log_not_contains "push -u origin HEAD"
-  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push" "gh pr create"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push origin HEAD:refs/heads/feature"
+  assert_log_line_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT push" "-u"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push origin HEAD:refs/heads/feature" "gh pr create"
 }
 
 @test "non-origin upstream is rejected before pushing" {

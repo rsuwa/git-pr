@@ -303,7 +303,7 @@ FAKE_CHMOD
 
   [ "$status" -eq 0 ]
   [ "$(cat "$GIT_PR_FAKE_LOG.chmod-private-count")" = "1" ]
-  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
   assert_log_contains "copilot -s --no-custom-instructions -p"
   assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Generated\\ title --body Generated\\ body"
 }

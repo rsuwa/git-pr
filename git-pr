@@ -2350,15 +2350,16 @@ if ! git -C "$repo_root" diff --quiet || ! git -C "$repo_root" diff --cached --q
   log_warn "Working tree has uncommitted changes. They won't be included in the PR."
 fi
 
+push_refspec="HEAD:refs/heads/$current_branch"
 if upstream_ref=$(git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null); then
   if [ "$upstream_ref" != "origin/$current_branch" ]; then
     die "Existing upstream must be origin/$current_branch for this origin-only workflow; found $upstream_ref."
   fi
   log_info "Pushing current branch"
-  git -C "$repo_root" push
+  git -C "$repo_root" push origin "$push_refspec"
 else
   log_info "Pushing and setting upstream to origin/$current_branch"
-  git -C "$repo_root" push -u origin HEAD
+  git -C "$repo_root" push -u origin "$push_refspec"
 fi
 
 if [ -z "$pr_number" ]; then

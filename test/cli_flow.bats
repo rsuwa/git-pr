@@ -13,7 +13,7 @@ setup() {
   run "$BATS_TEST_DIRNAME/../git-pr" --label bug,backend --reviewer alice,bob --assignee alice
 
   [ "$status" -eq 0 ]
-  assert_log_contains "push -u origin HEAD"
+  assert_log_contains "push -u origin HEAD:refs/heads/feature"
   assert_log_contains "gh pr create --repo example/repo --base main --head feature --label bug --label backend --reviewer alice --reviewer bob --assignee alice --fill"
 }
 
@@ -131,7 +131,7 @@ setup() {
   run "$BATS_TEST_DIRNAME/../git-pr" --no-edit
 
   [ "$status" -eq 0 ]
-  assert_log_contains "push -u origin HEAD"
+  assert_log_contains "push -u origin HEAD:refs/heads/feature"
   assert_log_not_contains "Invalid language"
 }
 
@@ -172,7 +172,7 @@ setup() {
   run "$BATS_TEST_DIRNAME/../git-pr"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "push -u origin HEAD"
+  assert_log_contains "push -u origin HEAD:refs/heads/feature"
   assert_log_not_contains "gh pr edit 123 --body"
 }
 

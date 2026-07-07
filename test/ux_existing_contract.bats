@@ -64,7 +64,7 @@ setup() {
   [ "$status" -eq 0 ]
   assert_log_order \
     "git -C $GIT_PR_FAKE_REPO_ROOT ls-remote --exit-code --heads origin release" \
-    "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD"
+    "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
   assert_log_line_contains_all "gh pr edit 123" \
     "--repo example/repo" \
     "--base release" \
