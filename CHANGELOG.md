@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.3.2 - 2026-07-07
+
+- Add `git pr doctor` to check required GitHub CLI setup, with optional
+  Copilot CLI executable checks via `--with-copilot`.
+- Document GitHub CLI and Copilot CLI setup paths, and improve dependency
+  failure guidance.
+- Reject unsafe GitHub remote hostnames before using them in GitHub CLI auth
+  guidance.
+
 ## 0.3.1 - 2026-07-07
 
 - Clarify `git pr merge` messaging and documentation around merge queues and
