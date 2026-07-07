@@ -62,7 +62,7 @@ setup() {
   assert_log_contains "gh pr merge 123 --repo example/repo --auto --merge --match-head-commit local-head"
 }
 
-@test "merge subcommand assembles immediate merge flags" {
+@test "merge subcommand assembles merge request flags" {
   export GIT_PR_FAKE_PR_NUMBER=123
   export GIT_PR_FAKE_PR_HEAD_SHA=abc123
 
@@ -71,7 +71,7 @@ setup() {
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr merge 123" "--repo example/repo" "--squash" "--match-head-commit abc123" "--delete-branch"
   assert_log_line_not_contains "gh pr merge 123" "--auto"
-  [[ "$output" == *"INFO: Merged PR #123."* ]]
+  [[ "$output" == *"INFO: Merge requested for PR #123."* ]]
 }
 
 @test "merge defaults match-head-commit to local HEAD" {

@@ -35,7 +35,7 @@ setup() {
   [[ "$output" == *"--body-file <path|->"* ]]
   [[ "$output" == *"--no-edit                Do not edit existing PR title/body; metadata/base may update"* ]]
   [[ "$output" == *"--fill                   Create: gh fill; existing PR: replace body from commits"* ]]
-  [[ "$output" == *"--admin                  Rejected with git-pr merge"* ]]
+  [[ "$output" == *"--admin                  Rejected; use gh directly to bypass requirements"* ]]
   [[ "$output" != *"--copilot"* ]]
   [[ "$output" != *"--copilot-verbose"* ]]
   [[ "$output" != *"--copilot-update"* ]]

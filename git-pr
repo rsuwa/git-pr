@@ -42,7 +42,7 @@ Options:
   -a, --enable-auto-merge  Enable auto-merge after checks pass (for create/update)
   -m, --merge-method <m>   merge|squash|rebase (merge actions; default: merge)
   --delete-branch          Delete branch after merge
-  --admin                  Rejected with git-pr merge; use gh directly for admin merge
+  --admin                  Rejected; use gh directly to bypass requirements
   --match-head-commit <s>  Require head SHA to match for merge
   --disable-auto-merge     Disable auto-merge for existing PR (auto-merge only)
   --draft                  Create as draft
@@ -1052,7 +1052,7 @@ validate_merge_options() {
   fi
 
   if [ "$auto_merge_admin" = "true" ] && { [ "$auto_merge" = "true" ] || [ "$action" = "auto-merge" ] || [ "$action" = "merge" ]; }; then
-    die "--admin cannot be used with git-pr merge operations because GitHub CLI treats it as an immediate admin merge. Use gh pr merge --admin directly if you intend to bypass requirements."
+    die "--admin cannot be used with git-pr merge operations because it bypasses merge requirements. Use gh pr merge --admin directly if you intend to bypass them."
   fi
 
   if [ "$auto_merge_match_head_explicit" = "true" ] && [ -z "$auto_merge_match_head" ]; then
@@ -1686,7 +1686,7 @@ merge_pull_request() {
   local pr_number="$1"
 
   run_gh_pr_merge "$pr_number" "false"
-  log_info "Merged PR #$pr_number."
+  log_info "Merge requested for PR #$pr_number. GitHub CLI may merge immediately or add the PR to a merge queue when required."
 }
 
 action="create"
