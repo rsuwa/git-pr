@@ -552,16 +552,31 @@ generate_title_body_with_copilot() {
     git -C "$repo_root" diff --stat "$base_ref...HEAD" -- "${diff_pathspec[@]}"
     printf "\nDiff:\n"
     git -C "$repo_root" diff "$base_ref...HEAD" -- "${diff_pathspec[@]}"
-  } > "$diff_file"
+  } > "$diff_file" || {
+    log_warn "Failed to prepare Copilot prompt; falling back."
+    return 1
+  }
 
   local file_size
-  file_size=$(wc -c < "$diff_file" | tr -d ' ')
+  file_size=$(wc -c < "$diff_file" | tr -d ' ') || {
+    log_warn "Failed to prepare Copilot prompt; falling back."
+    return 1
+  }
   if [ "$file_size" -gt "$max_bytes" ]; then
     local truncated_diff_file
     truncated_diff_file="$temp_dir/diff-truncated.txt"
-    truncate_utf8 "$max_bytes" < "$diff_file" > "$truncated_diff_file"
-    mv "$truncated_diff_file" "$diff_file"
-    printf "\n\n[Diff truncated to %s bytes]\n" "$max_bytes" >> "$diff_file"
+    truncate_utf8 "$max_bytes" < "$diff_file" > "$truncated_diff_file" || {
+      log_warn "Failed to prepare Copilot prompt; falling back."
+      return 1
+    }
+    mv "$truncated_diff_file" "$diff_file" || {
+      log_warn "Failed to prepare Copilot prompt; falling back."
+      return 1
+    }
+    printf "\n\n[Diff truncated to %s bytes]\n" "$max_bytes" >> "$diff_file" || {
+      log_warn "Failed to prepare Copilot prompt; falling back."
+      return 1
+    }
   fi
 
   local prompt_file
@@ -612,7 +627,10 @@ EOF
   fi
 
   if [ -n "$template_file" ]; then
-    template_content=$(cat "$template_file")
+    template_content=$(cat "$template_file") || {
+      log_warn "Failed to prepare Copilot prompt; falling back."
+      return 1
+    }
     template_note=$(cat <<EOF
 - Follow the provided PR template structure and headings.
 - Keep existing template text unless you are confident it should be replaced.
@@ -629,7 +647,8 @@ EOF
 
   prompt_file="$temp_dir/prompt.txt"
 
-  cat <<EOF > "$prompt_file"
+  {
+    cat <<EOF
 $language_instruction
 - Title: single line, concise.
 $detail_note
@@ -650,7 +669,14 @@ __GIT_PR_END__
 
 Input:
 EOF
-  cat "$diff_file" >> "$prompt_file"
+  } > "$prompt_file" || {
+    log_warn "Failed to prepare Copilot prompt; falling back."
+    return 1
+  }
+  cat "$diff_file" >> "$prompt_file" || {
+    log_warn "Failed to prepare Copilot prompt; falling back."
+    return 1
+  }
 
   local response=""
   response=$(cd "$repo_root" && copilot -s --no-custom-instructions -p "@$prompt_file") || {

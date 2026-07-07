@@ -90,6 +90,23 @@ FAKE_CHMOD
   "$real_chmod" 755 "$GIT_PR_FAKE_BIN/chmod"
 }
 
+create_selective_mv() {
+  local real_mv
+  real_mv=$(command -v mv)
+  export GIT_PR_REAL_MV="$real_mv"
+  cat > "$GIT_PR_FAKE_BIN/mv" <<'FAKE_MV'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${GIT_PR_FAKE_MV_FAIL_TRUNCATED_DIFF:-false}" = "true" ] && [ "${1-}" != "${1%-truncated.txt}" ]; then
+  exit 1
+fi
+
+exec "$GIT_PR_REAL_MV" "$@"
+FAKE_MV
+  chmod 755 "$GIT_PR_FAKE_BIN/mv"
+}
+
 @test "copilot auto mode creates a new PR when none exists" {
   create_fake_copilot
 
@@ -291,6 +308,21 @@ FAKE_CHMOD
   assert_no_command_logged "copilot"
   assert_log_not_contains "gh pr create"
   [ -z "$(find "$tmp_root" -mindepth 1 -maxdepth 1 -name 'git-pr.*' -print -quit)" ]
+}
+
+@test "copilot diff truncation write failure falls back without invoking copilot" {
+  create_fake_copilot
+  create_selective_mv
+
+  run env \
+    GIT_PR_COPILOT_DIFF_MAX_BYTES=1 \
+    GIT_PR_FAKE_MV_FAIL_TRUNCATED_DIFF=true \
+    "$BATS_TEST_DIRNAME/../git-pr" copilot
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Failed to prepare Copilot prompt; falling back."* ]]
+  assert_no_command_logged "copilot"
+  assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill"
 }
 
 @test "copilot reuses preflighted private temp directory after push" {

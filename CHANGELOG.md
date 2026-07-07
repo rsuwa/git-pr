@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fall back to GitHub CLI fill mode when Copilot prompt preparation fails.
+
 ## 0.3.2 - 2026-07-07
 
 - Add `git pr doctor` to check required GitHub CLI setup, with optional
