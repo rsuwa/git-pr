@@ -1647,15 +1647,19 @@ resolve_default_base_branch() {
   fi
 }
 
+validate_create_base_branch() {
+  validate_base_branch_name "$base_branch"
+  if [ "$current_branch" = "$base_branch" ]; then
+    die "You are on '$base_branch'. Create a feature branch first."
+  fi
+}
+
 resolve_create_base_branch() {
   if [ "$base_branch_explicit" = "false" ]; then
     resolve_default_base_branch
   fi
 
-  validate_base_branch_name "$base_branch"
-  if [ "$current_branch" = "$base_branch" ]; then
-    die "You are on '$base_branch'. Create a feature branch first."
-  fi
+  validate_create_base_branch
 }
 
 resolve_existing_generation_base_branch() {
@@ -2039,13 +2043,20 @@ prepare_existing_pr_before_push() {
 }
 
 prepare_create_pr_before_push() {
+  if [ "$base_branch_explicit" = "true" ]; then
+    validate_create_base_branch
+  fi
+
   resolve_template_file
 
   if [ -n "$template_file" ] && [ "$template_resolved" != "true" ]; then
     die "Template file not found: $template_file"
   fi
 
-  resolve_create_base_branch
+  if [ "$base_branch_explicit" = "false" ]; then
+    resolve_create_base_branch
+  fi
+
   ensure_base_ref_for_generation
   count_commits_since_base
 }

@@ -219,6 +219,18 @@ setup() {
   assert_log_not_contains "gh pr create"
 }
 
+@test "explicit invalid base is rejected before missing template lookup" {
+  run "$GIT_PR" --base "-bad" --template missing-template.md
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Invalid base branch: -bad"* ]]
+  [[ "$output" != *"Template file not found"* ]]
+  assert_log_not_contains "gh repo view"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
 @test "rev-list count failure fails before pushing" {
   export GIT_PR_FAKE_REV_LIST_COUNT_STATUS=2
 
