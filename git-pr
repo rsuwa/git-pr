@@ -1647,15 +1647,19 @@ resolve_default_base_branch() {
   fi
 }
 
+validate_create_base_branch() {
+  validate_base_branch_name "$base_branch"
+  if [ "$current_branch" = "$base_branch" ]; then
+    die "You are on '$base_branch'. Create a feature branch first."
+  fi
+}
+
 resolve_create_base_branch() {
   if [ "$base_branch_explicit" = "false" ]; then
     resolve_default_base_branch
   fi
 
-  validate_base_branch_name "$base_branch"
-  if [ "$current_branch" = "$base_branch" ]; then
-    die "You are on '$base_branch'. Create a feature branch first."
-  fi
+  validate_create_base_branch
 }
 
 resolve_existing_generation_base_branch() {
@@ -2039,11 +2043,18 @@ prepare_existing_pr_before_push() {
 }
 
 prepare_create_pr_before_push() {
-  resolve_create_base_branch
+  if [ "$base_branch_explicit" = "true" ]; then
+    validate_create_base_branch
+  fi
+
   resolve_template_file
 
   if [ -n "$template_file" ] && [ "$template_resolved" != "true" ]; then
     die "Template file not found: $template_file"
+  fi
+
+  if [ "$base_branch_explicit" = "false" ]; then
+    resolve_create_base_branch
   fi
 
   ensure_base_ref_for_generation
@@ -2056,7 +2067,6 @@ prepare_pr_flow_before_push() {
   commit_count=0
 
   resolve_pr_flow_copilot_mode
-  validate_pr_flow_body_file
 
   if [ -n "$pr_number" ]; then
     prepare_existing_pr_before_push
@@ -2641,6 +2651,7 @@ handle_doctor_action
 validate_common_options
 validate_merge_options
 apply_auto_merge_action_defaults
+validate_pr_flow_body_file
 
 load_repository_context
 handle_merge_action

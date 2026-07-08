@@ -152,6 +152,8 @@ setup() {
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"ERROR: Body file not found:"* ]]
+  assert_log_not_contains "gh auth status"
+  assert_log_not_contains "gh pr list"
   assert_no_git_push
 }
 

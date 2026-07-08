@@ -219,6 +219,18 @@ setup() {
   assert_log_not_contains "gh pr create"
 }
 
+@test "explicit invalid base is rejected before missing template lookup" {
+  run "$GIT_PR" --base "-bad" --template missing-template.md
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Invalid base branch: -bad"* ]]
+  [[ "$output" != *"Template file not found"* ]]
+  assert_log_not_contains "gh repo view"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
 @test "rev-list count failure fails before pushing" {
   export GIT_PR_FAKE_REV_LIST_COUNT_STATUS=2
 
@@ -332,6 +344,18 @@ setup() {
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--title Test\\ title" "--template $GIT_PR_FAKE_REPO_ROOT/pull_request_template.md"
   assert_log_not_contains " --fill"
+}
+
+@test "create with missing template fails before default branch discovery" {
+  run "$GIT_PR" --template missing-template.md
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Template file not found: missing-template.md"* ]]
+  assert_log_not_contains "gh repo view"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count"
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
 }
 
 @test "create with editor and draft passes both flags before fill" {
