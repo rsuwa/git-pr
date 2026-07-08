@@ -35,6 +35,7 @@ setup() {
   [[ "$output" == *"git pr doctor [--with-copilot]"* ]]
   [[ "$output" == *"Pushes the current branch, then creates or updates a GitHub pull request."* ]]
   [[ "$output" == *"--body-file <path|->"* ]]
+  [[ "$output" == *"--template <path>    Starting PR body template for gh/Copilot (create only)"* ]]
   [[ "$output" == *"--no-edit                Do not edit existing PR title/body; metadata/base may update"* ]]
   [[ "$output" == *"--fill                   Create: gh fill; existing PR: replace body from commits"* ]]
   [[ "$output" == *"--admin                  Rejected; use gh directly to bypass requirements"* ]]
