@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-GIT_PR_VERSION="0.3.4"
+GIT_PR_VERSION="0.3.5"
 COPILOT_UPDATE_START_MARKER="<!-- git-pr:copilot-update:start -->"
 COPILOT_UPDATE_END_MARKER="<!-- git-pr:copilot-update:end -->"
 GITHUB_CLI_INSTALL_URL="https://github.com/cli/cli#installation"

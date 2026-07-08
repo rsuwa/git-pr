@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.3.5 - 2026-07-09
+
+- Fix default branch discovery with current GitHub CLI by using the supported
+  positional repository argument for `gh repo view`.
+- Keep `git pr` usable without `--base` when no branch `gh-merge-base` is set
+  and `origin/HEAD` is unavailable.
+- Add parser boundary characterization tests and split argument parsing helpers
+  without changing the CLI contract.
+
 ## 0.3.4 - 2026-07-09
 
 - Refactor origin URL parsing, option parsing, and PR flow runner boundaries
