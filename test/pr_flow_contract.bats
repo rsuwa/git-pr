@@ -351,6 +351,17 @@ setup() {
   assert_log_order "gh pr create --repo example/repo --base main --head feature --fill" "gh pr view 1 --repo example/repo --web"
 }
 
+@test "create follow-up actions run auto-merge before opening the web view" {
+  run "$GIT_PR" --web --enable-auto-merge --merge-method=squash
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--fill"
+  assert_log_line_contains_all "gh pr merge 1" "--repo example/repo" "--auto" "--squash" "--match-head-commit local-head"
+  assert_log_contains "gh pr view 1 --repo example/repo --web"
+  assert_log_order "gh pr create --repo example/repo --base main --head feature --fill" "gh pr merge 1"
+  assert_log_order "gh pr merge 1" "gh pr view 1 --repo example/repo --web"
+}
+
 @test "create pushes before gh pr create when upstream is missing" {
   run "$GIT_PR"
 
@@ -500,6 +511,19 @@ setup() {
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
   assert_log_not_contains "gh pr edit"
   [[ "$output" == *"INFO: No PR fields to update."* ]]
+}
+
+@test "existing PR follow-up actions open the web view before auto-merge" {
+  export GIT_PR_FAKE_PR_NUMBER=123
+
+  run "$GIT_PR" --no-edit --web --enable-auto-merge --merge-method=squash
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
+  assert_log_contains "gh pr view 123 --repo example/repo --web"
+  assert_log_line_contains_all "gh pr merge 123" "--repo example/repo" "--auto" "--squash" "--match-head-commit local-head"
+  assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature" "gh pr view 123 --repo example/repo --web"
+  assert_log_order "gh pr view 123 --repo example/repo --web" "gh pr merge 123"
 }
 
 @test "dirty worktree emits warning and still pushes before create" {
