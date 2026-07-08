@@ -27,6 +27,29 @@ FAKE_COPILOT
   chmod 755 "$GIT_PR_FAKE_BIN/copilot"
 }
 
+create_empty_body_copilot() {
+  cat > "$GIT_PR_FAKE_BIN/copilot" <<'FAKE_COPILOT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+{
+  printf 'copilot'
+  for arg in "$@"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n'
+} >> "$GIT_PR_FAKE_LOG"
+
+cat <<'COPILOT_RESPONSE'
+__GIT_PR_TITLE__
+Generated title
+__GIT_PR_BODY__
+__GIT_PR_END__
+COPILOT_RESPONSE
+FAKE_COPILOT
+  chmod 755 "$GIT_PR_FAKE_BIN/copilot"
+}
+
 create_backslash_copilot() {
   cat > "$GIT_PR_FAKE_BIN/copilot" <<'FAKE_COPILOT'
 #!/usr/bin/env bash
@@ -243,6 +266,20 @@ FAKE_MV
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARN: Failed to parse Copilot output; falling back."* ]]
   [[ "$output" == *"WARN: Falling back to --fill."* ]]
+  assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill"
+  assert_log_not_contains "gh pr create --repo example/repo --base main --head feature --title"
+}
+
+@test "copilot empty marked body falls back without raw parser errors" {
+  create_empty_body_copilot
+
+  run "$BATS_TEST_DIRNAME/../git-pr" copilot
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN: Failed to parse Copilot output; falling back."* ]]
+  [[ "$output" == *"WARN: Falling back to --fill."* ]]
+  [[ "$output" != *"cat:"* ]]
+  [[ "$output" != *"body.txt"* ]]
   assert_log_contains "gh pr create --repo example/repo --base main --head feature --fill"
   assert_log_not_contains "gh pr create --repo example/repo --base main --head feature --title"
 }

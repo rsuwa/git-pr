@@ -323,6 +323,9 @@ set_title_body_from_copilot_marked_response() {
   local title_path="$1"
   local body_path="$2"
 
+  : > "$title_path"
+  : > "$body_path"
+
   if awk -v tf="$title_path" -v bf="$body_path" '
     function trim(s) {
       sub(/^[[:space:]]+/, "", s)
