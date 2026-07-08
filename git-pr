@@ -2345,6 +2345,7 @@ init_option_defaults() {
 }
 
 parse_action_argument() {
+  # Parser helpers set parse_option_shift before returning success.
   parse_option_shift=0
 
   case "${1-}" in
@@ -2378,7 +2379,7 @@ set_fill_mode() {
   fill_mode_explicit="true"
 }
 
-parse_content_option() {
+parse_pr_content_option() {
   parse_option_shift=0
 
   case "${1-}" in
@@ -2698,7 +2699,7 @@ parse_misc_option() {
 }
 
 parse_option_argument() {
-  parse_content_option "$@" || \
+  parse_pr_content_option "$@" || \
     parse_metadata_option "$@" || \
     parse_copilot_option "$@" || \
     parse_fill_option "$@" || \
