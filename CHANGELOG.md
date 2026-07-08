@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.3.4 - 2026-07-09
+
+- Refactor origin URL parsing, option parsing, and PR flow runner boundaries
+  without changing the CLI contract.
+- Revalidate newly discovered existing pull requests after push before
+  applying create-only or Copilot create-mode behavior.
+- Fail local `--body-file` and create-mode `--template` validation earlier,
+  before avoidable GitHub/default-branch/fetch work.
+- Suppress raw parser file errors when Copilot returns a marked response with
+  an empty body.
+- Document `--template` support for Copilot create mode in help and README.
+
 ## 0.3.3 - 2026-07-08
 
 - Harden base branch fetches by validating branch names and using explicit
