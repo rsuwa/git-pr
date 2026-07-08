@@ -228,6 +228,24 @@ fake_pr_number() {
   fi
 }
 
+fake_pr_list_number() {
+  local count=0
+
+  if [ -n "${GIT_PR_FAKE_PR_NUMBER_AFTER_LIST:-}" ]; then
+    if [ -f "$GIT_PR_FAKE_LOG.pr-list-count" ]; then
+      count=$(cat "$GIT_PR_FAKE_LOG.pr-list-count")
+    fi
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$GIT_PR_FAKE_LOG.pr-list-count"
+    if [ "$count" -ge "${GIT_PR_FAKE_PR_NUMBER_AFTER_LIST:-2}" ]; then
+      printf '%s\n' "${GIT_PR_FAKE_PR_NUMBER_AFTER_LIST_VALUE:-123}"
+      return 0
+    fi
+  fi
+
+  fake_pr_number
+}
+
 case "${1-} ${2-}" in
   "auth status")
     auth_host="$(arg_after --hostname "$@" || true)"
@@ -298,7 +316,7 @@ case "${1-} ${2-}" in
     head="$(arg_after --head "$@" || true)"
     state="$(arg_after --state "$@" || true)"
     json_fields="$(arg_after --json "$@" || true)"
-    pr_number_value="$(fake_pr_number)"
+    pr_number_value="$(fake_pr_list_number)"
     for ((i = 1; i <= $#; i++)); do
       if [ "${!i}" = "--jq" ]; then
         next=$((i + 1))

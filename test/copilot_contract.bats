@@ -1,4 +1,7 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2030,SC2031
+# Bats runs each @test in its own process; per-test fake environment exports
+# are intentionally scoped to the current test.
 
 load test_helper
 
@@ -191,6 +194,34 @@ FAKE_MV
   [[ "$output" == *"ERROR: --mode=create requires no existing PR. Use --mode=update."* ]]
   assert_no_git_push
   assert_log_not_contains "gh pr edit"
+}
+
+@test "copilot create mode rejects post-push discovered existing PR before edit" {
+  create_fake_copilot
+  export GIT_PR_FAKE_PR_NUMBER_AFTER_LIST=2
+
+  run "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=create
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: --mode=create requires no existing PR. Use --mode=update."* ]]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
+  assert_no_command_logged "copilot"
+  assert_log_not_contains "gh pr edit"
+}
+
+@test "copilot auto mode treats post-push discovered existing PR as an update" {
+  create_fake_copilot
+  export GIT_PR_FAKE_PR_NUMBER_AFTER_LIST=2
+  export GIT_PR_FAKE_PR_BODY="Already written"
+
+  run "$BATS_TEST_DIRNAME/../git-pr" copilot --mode=auto
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"INFO: Existing PR #123 found for feature."* ]]
+  [[ "$output" == *"INFO: Updated PR #123: copilot section."* ]]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
+  assert_log_line_contains_all "gh pr edit 123" "--repo example/repo" "--body"
+  assert_log_line_not_contains "gh pr edit 123" "--title"
 }
 
 @test "copilot update mode without an existing PR fails before push" {
