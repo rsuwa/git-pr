@@ -17,6 +17,48 @@ setup() {
   assert_log_contains "gh pr create --repo example/repo --base main --head feature --label bug --label backend --reviewer alice --reviewer bob --assignee alice --fill"
 }
 
+@test "explicit create subcommand parses mixed option families consistently" {
+  local create_line
+
+  run "$BATS_TEST_DIRNAME/../git-pr" create \
+    --base=develop \
+    --title="Manual title" \
+    --body="Manual body" \
+    --label=bug,backend \
+    --label docs \
+    --reviewer=alice,bob \
+    --reviewer carol \
+    --assignee=alice,bob \
+    --assignee carol \
+    --draft \
+    --web
+
+  [ "$status" -eq 0 ]
+  assert_log_line_contains_all "gh pr create" \
+    "--repo example/repo" \
+    "--base develop" \
+    "--head feature" \
+    "--draft" \
+    "--label bug" \
+    "--label backend" \
+    "--label docs" \
+    "--reviewer alice" \
+    "--reviewer bob" \
+    "--reviewer carol" \
+    "--assignee alice" \
+    "--assignee bob" \
+    "--assignee carol" \
+    "--title Manual\\ title" \
+    "--body Manual\\ body"
+  assert_log_line_not_contains "gh pr create" "--fill"
+  create_line=$(grep -F "gh pr create" "$GIT_PR_FAKE_LOG" | head -n 1)
+  [ "$(printf '%s\n' "$create_line" | grep -o -- "--label" | wc -l | tr -d ' ')" = "3" ]
+  [ "$(printf '%s\n' "$create_line" | grep -o -- "--reviewer" | wc -l | tr -d ' ')" = "3" ]
+  [ "$(printf '%s\n' "$create_line" | grep -o -- "--assignee" | wc -l | tr -d ' ')" = "3" ]
+  assert_log_contains "gh pr view 1 --repo example/repo --web"
+  assert_log_order "gh pr create" "gh pr view 1 --repo example/repo --web"
+}
+
 @test "existing PR with --no-edit can still update metadata" {
   export GIT_PR_FAKE_PR_NUMBER=123
 

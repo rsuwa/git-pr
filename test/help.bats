@@ -22,6 +22,20 @@ setup() {
   [[ "$output" =~ ^git-pr\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
+@test "subcommand help and version do not require git or gh" {
+  local subcommand
+
+  for subcommand in create copilot auto-merge merge doctor update; do
+    run env PATH="/usr/bin:/bin" "$BATS_TEST_DIRNAME/../git-pr" "$subcommand" --version
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ ^git-pr\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+    run env PATH="/usr/bin:/bin" "$BATS_TEST_DIRNAME/../git-pr" "$subcommand" --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Usage: git pr"* ]]
+  done
+}
+
 @test "help documents CLI contract flags" {
   run "$BATS_TEST_DIRNAME/../git-pr" --help
   [ "$status" -eq 0 ]
