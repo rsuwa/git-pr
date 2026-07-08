@@ -101,6 +101,14 @@ run_git_pr_update_expect_error() {
   done
 }
 
+@test "missing values after explicit subcommands use stable parser errors" {
+  run_git_pr_expect_error "--base requires a value." create --base
+  run_git_pr_expect_error "--mode requires a value." copilot --mode
+  run_git_pr_expect_error "--detail requires a value." copilot --detail
+  run_git_pr_expect_error "--merge-method requires a value." auto-merge --merge-method
+  run_git_pr_expect_error "--match-head-commit requires a value." merge --match-head-commit
+}
+
 @test "empty values for non-body value options fail before push" {
   run_git_pr_expect_error "--base requires a non-empty value." --base ""
   run_git_pr_expect_error "--title requires a non-empty value." --title ""
