@@ -1765,10 +1765,11 @@ is_valid_github_host() {
   return 0
 }
 
-github_repo_from_origin_url() {
+parse_github_origin_url() {
   local url="$1"
   local host=""
   local path=""
+  local repo
   local rest
 
   url="${url%%#*}"
@@ -1809,49 +1810,27 @@ github_repo_from_origin_url() {
   path="${path%.git}"
   is_valid_github_repo_path "$path" || return 1
 
-  if [ -n "$host" ] && [ "$host" != "github.com" ]; then
-    printf '%s/%s' "$host" "$path"
+  if [ "$host" != "github.com" ]; then
+    repo="$host/$path"
   else
-    printf '%s' "$path"
+    repo="$path"
   fi
+
+  printf '%s\t%s' "$host" "$repo"
+}
+
+github_repo_from_origin_url() {
+  local parsed
+
+  parsed=$(parse_github_origin_url "$1") || return 1
+  printf '%s' "${parsed#*$'\t'}"
 }
 
 github_host_from_origin_url() {
-  local url="$1"
-  local host=""
-  local rest
+  local parsed
 
-  url="${url%%#*}"
-  url="${url%%\?*}"
-
-  case "$url" in
-    git@*:*)
-      rest="${url#git@}"
-      host="${rest%%:*}"
-      ;;
-    ssh://git@*/*)
-      rest="${url#ssh://git@}"
-      host="${rest%%/*}"
-      host="${host%%:*}"
-      ;;
-    https://*/*/*)
-      rest="${url#https://}"
-      host="${rest%%/*}"
-      host="${host##*@}"
-      ;;
-    http://*/*/*)
-      rest="${url#http://}"
-      host="${rest%%/*}"
-      host="${host##*@}"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-
-  [ -n "$host" ] || return 1
-  is_valid_github_host "$host" || return 1
-  printf '%s' "$host"
+  parsed=$(parse_github_origin_url "$1") || return 1
+  printf '%s' "${parsed%%$'\t'*}"
 }
 
 github_owner_from_repo() {
