@@ -305,7 +305,7 @@ against `origin` before pushing.
 | `-t, --title <title>` | Pull request title. |
 | `-d, --body <body>` | Pull request body. |
 | `-F, --body-file <path\|->` | Pull request body file, or `-` to let `gh` read stdin. |
-| `-T, --template <path>` | Starting body template passed to `gh pr create`. Create only. |
+| `-T, --template <path>` | Starting pull request body template for `gh pr create` and Copilot create mode. Create only. |
 | `-e, --editor` | Open an editor while creating a pull request. Create only. |
 | `--label <label>` | Add labels. Repeatable and comma-separated values are supported. |
 | `--reviewer <user>` | Add reviewers. Repeatable and comma-separated values are supported. |
