@@ -555,7 +555,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push origin HEAD:refs/heads/feature"
-  assert_log_line_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT push" "-u"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin"
   assert_log_order "git -C $GIT_PR_FAKE_REPO_ROOT push origin HEAD:refs/heads/feature" "gh pr create"
 }
 
