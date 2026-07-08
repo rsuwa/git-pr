@@ -2039,13 +2039,13 @@ prepare_existing_pr_before_push() {
 }
 
 prepare_create_pr_before_push() {
-  resolve_create_base_branch
   resolve_template_file
 
   if [ -n "$template_file" ] && [ "$template_resolved" != "true" ]; then
     die "Template file not found: $template_file"
   fi
 
+  resolve_create_base_branch
   ensure_base_ref_for_generation
   count_commits_since_base
 }
@@ -2056,7 +2056,6 @@ prepare_pr_flow_before_push() {
   commit_count=0
 
   resolve_pr_flow_copilot_mode
-  validate_pr_flow_body_file
 
   if [ -n "$pr_number" ]; then
     prepare_existing_pr_before_push
@@ -2641,6 +2640,7 @@ handle_doctor_action
 validate_common_options
 validate_merge_options
 apply_auto_merge_action_defaults
+validate_pr_flow_body_file
 
 load_repository_context
 handle_merge_action

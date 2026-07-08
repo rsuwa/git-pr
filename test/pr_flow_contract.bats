@@ -334,6 +334,18 @@ setup() {
   assert_log_not_contains " --fill"
 }
 
+@test "create with missing template fails before default branch discovery" {
+  run "$GIT_PR" --template missing-template.md
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: Template file not found: missing-template.md"* ]]
+  assert_log_not_contains "gh repo view"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT fetch origin"
+  assert_log_not_contains "git -C $GIT_PR_FAKE_REPO_ROOT rev-list --count"
+  assert_no_git_push
+  assert_log_not_contains "gh pr create"
+}
+
 @test "create with editor and draft passes both flags before fill" {
   run "$GIT_PR" --editor --draft
 
