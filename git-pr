@@ -31,7 +31,7 @@ Options:
   -d, --body <body>        PR body (disables --fill)
   -F, --body-file <path|-> PR body from file or stdin (disables --fill)
   -e, --editor             Open editor to edit title/body (create only)
-  -T, --template <path>    Starting PR body template for gh (create only)
+  -T, --template <path>    Starting PR body template for gh/Copilot (create only)
   --label <label>          Add label(s) (repeatable, comma-separated ok)
   --reviewer <user>        Add reviewer(s) (repeatable, comma-separated ok)
   --assignee <user>        Add assignee(s) (repeatable, comma-separated ok)
