@@ -2247,11 +2247,18 @@ run_create_pr_flow() {
 }
 
 run_pr_flow() {
+  local pr_number_before_push
+
   prepare_pr_flow_before_push
+  pr_number_before_push="$pr_number"
   push_current_branch
 
   if [ -z "$pr_number" ]; then
     pr_number=$(get_current_pr_number)
+    if [ -z "$pr_number_before_push" ] && [ -n "$pr_number" ]; then
+      resolve_pr_flow_copilot_mode
+      prepare_existing_pr_before_push
+    fi
   fi
 
   if [ -n "$pr_number" ]; then

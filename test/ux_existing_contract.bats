@@ -56,6 +56,18 @@ setup() {
   assert_log_not_contains "gh pr edit"
 }
 
+@test "post-push discovered existing PR rejects create-only draft before edit" {
+  export GIT_PR_FAKE_PR_NUMBER_AFTER_LIST=2
+
+  run "$GIT_PR" --draft --no-fill
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: --draft is only supported when creating a PR."* ]]
+  assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT push -u origin HEAD:refs/heads/feature"
+  assert_log_not_contains "gh pr create"
+  assert_log_not_contains "gh pr edit"
+}
+
 @test "existing PR no-edit can retarget base and update metadata together" {
   export GIT_PR_FAKE_PR_NUMBER=123
 
