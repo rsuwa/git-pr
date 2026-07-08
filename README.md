@@ -99,10 +99,10 @@ For a reproducible install, pin both the downloaded installer and the payload
 URLs:
 
 ```bash
-curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.2/install.sh |
+curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.3/install.sh |
   env \
-    GIT_PR_INSTALL_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.2/git-pr" \
-    GIT_PR_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.2/SHA256SUMS" \
+    GIT_PR_INSTALL_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.3/git-pr" \
+    GIT_PR_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.3/SHA256SUMS" \
     bash
 ```
 
@@ -244,8 +244,8 @@ the executable only after checksum and Bash syntax validation pass.
 To update from a pinned release instead of `latest`:
 
 ```bash
-GIT_PR_UPDATE_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.2/git-pr" \
-GIT_PR_UPDATE_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.2/SHA256SUMS" \
+GIT_PR_UPDATE_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.3/git-pr" \
+GIT_PR_UPDATE_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.3/SHA256SUMS" \
   git pr update
 ```
 
@@ -265,13 +265,13 @@ assets:
 - `SHA256SUMS`
 
 `SHA256SUMS` must include entries for at least `git-pr` and `install.sh`.
-The current `v0.3.2` release is published with all three assets.
+The current `v0.3.3` release is published with all three assets.
 
 Verify a release before using it:
 
 ```bash
-gh release view v0.3.2 --json tagName,isDraft,isPrerelease,assets
-curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.2/SHA256SUMS
+gh release view v0.3.3 --json tagName,isDraft,isPrerelease,assets
+curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.3/SHA256SUMS
 ```
 
 Release publishing is expected to run the test suite, generate checksums, smoke

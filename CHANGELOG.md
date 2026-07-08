@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+## 0.3.3 - 2026-07-08
+
+- Harden base branch fetches by validating branch names and using explicit
+  remote refspecs.
+- Push the current branch with an explicit `HEAD:refs/heads/<branch>` refspec.
+- Reject unsafe GitHub repository owner and name path parts parsed from
+  `origin`.
 - Fall back to GitHub CLI fill mode when Copilot prompt preparation fails.
+- Extract main PR flow helpers without changing the CLI contract.
 
 ## 0.3.2 - 2026-07-07
 
