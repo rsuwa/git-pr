@@ -256,6 +256,19 @@ case "${1-} ${2-}" in
     [ "${GIT_PR_FAKE_GH_AUTH:-true}" = "true" ] || exit 1
     ;;
   "repo view")
+    if has_arg --repo "$@"; then
+      printf 'fake gh: repo view does not support --repo\n' >&2
+      exit 1
+    fi
+    repo="${3-}"
+    if [ -z "$repo" ] || [ "${repo#-}" != "$repo" ]; then
+      printf 'fake gh: repo view missing repository argument\n' >&2
+      exit 1
+    fi
+    if [ "$repo" != "${GIT_PR_FAKE_REPO:-example/repo}" ]; then
+      printf 'fake gh: unexpected repo view repository: %s\n' "$repo" >&2
+      exit 1
+    fi
     [ "${GIT_PR_FAKE_REPO_VIEW_FAIL:-false}" != "true" ] || exit 1
     printf '%s\n' "${GIT_PR_FAKE_DEFAULT_BRANCH:-main}"
     ;;

@@ -1637,7 +1637,7 @@ resolve_default_base_branch() {
 
   base_branch=$(git -C "$repo_root" config --get "branch.$current_branch.gh-merge-base" || true)
   if [ -z "$base_branch" ]; then
-    base_branch=$(gh repo view --repo "$github_repo" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
+    base_branch=$(gh repo view "$github_repo" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
   fi
   if [ -z "$base_branch" ]; then
     default_ref=$(git -C "$repo_root" symbolic-ref -q --short refs/remotes/origin/HEAD || true)

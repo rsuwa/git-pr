@@ -36,7 +36,8 @@ setup() {
   run "$GIT_PR"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh repo view --repo example/repo --json defaultBranchRef --jq .defaultBranchRef.name"
+  assert_log_contains "gh repo view example/repo --json defaultBranchRef --jq .defaultBranchRef.name"
+  assert_log_not_contains "gh repo view --repo"
   assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base trunk" "--head feature" "--fill"
 }
 
@@ -47,7 +48,8 @@ setup() {
   run "$GIT_PR"
 
   [ "$status" -eq 0 ]
-  assert_log_contains "gh repo view --repo example/repo --json defaultBranchRef --jq .defaultBranchRef.name"
+  assert_log_contains "gh repo view example/repo --json defaultBranchRef --jq .defaultBranchRef.name"
+  assert_log_not_contains "gh repo view --repo"
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT symbolic-ref -q --short refs/remotes/origin/HEAD"
   assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base stable" "--head feature" "--fill"
 }
