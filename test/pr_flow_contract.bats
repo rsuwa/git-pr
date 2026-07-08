@@ -162,6 +162,21 @@ setup() {
   assert_log_not_contains "ghe.example.com:2222/octo/repo"
 }
 
+@test "GitHub Enterprise credentialed HTTPS origin strips credentials query and fragment" {
+  export GIT_PR_FAKE_ORIGIN_URL="https://token:secret@ghe.example.com/octo/repo.git?token=abc#frag"
+  export GIT_PR_FAKE_REPO="ghe.example.com/octo/repo"
+  export GIT_PR_FAKE_EXPECT_AUTH_HOST="ghe.example.com"
+  export GIT_PR_FAKE_HEAD_OWNER="octo"
+
+  run "$GIT_PR"
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "gh auth status --hostname ghe.example.com"
+  assert_log_line_contains_all "gh pr create" "--repo ghe.example.com/octo/repo" "--base main" "--head feature" "--fill"
+  assert_log_not_contains "secret"
+  assert_log_not_contains "token=abc"
+}
+
 @test "local path origin is rejected before push" {
   export GIT_PR_FAKE_ORIGIN_URL="../repo.git"
 
