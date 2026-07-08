@@ -356,6 +356,7 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_line_contains_all "gh pr create" "--repo example/repo" "--base main" "--head feature" "--fill"
+  assert_log_line_not_contains "gh pr create" "--web"
   assert_log_line_contains_all "gh pr merge 1" "--repo example/repo" "--auto" "--squash" "--match-head-commit local-head"
   assert_log_contains "gh pr view 1 --repo example/repo --web"
   assert_log_order "gh pr create --repo example/repo --base main --head feature --fill" "gh pr merge 1"
