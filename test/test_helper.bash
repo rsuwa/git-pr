@@ -8,6 +8,7 @@ setup_fake_cli_env() {
   export PATH="$GIT_PR_FAKE_BIN:$BATS_TEST_DIRNAME/..:$PATH"
   create_fake_git
   create_fake_gh
+  create_fake_copilot_contract_helper
 }
 
 create_fake_git() {
@@ -220,6 +221,222 @@ has_arg() {
   return 1
 }
 
+fail_unsupported_option() {
+  printf 'fake gh: unsupported option for %s: %s\n' "$1" "$2" >&2
+  exit 1
+}
+
+fail_unsupported_argument() {
+  printf 'fake gh: unsupported argument for %s: %s\n' "$1" "$2" >&2
+  exit 1
+}
+
+require_fake_option_value() {
+  local command_name="$1"
+  local option="$2"
+  local index="$3"
+  local total="$4"
+  local next=$((index + 1))
+  local next_value
+
+  shift 4
+
+  if [ "$next" -gt "$total" ]; then
+    printf 'fake gh: %s requires a value for %s\n' "$command_name" "$option" >&2
+    exit 1
+  fi
+
+  next_value="${!next}"
+  if ! fake_gh_option_allows_option_like_value "$command_name" "$option"; then
+    case "$next_value" in
+      --*)
+        printf 'fake gh: %s requires a value for %s\n' "$command_name" "$option" >&2
+        exit 1
+        ;;
+    esac
+  fi
+}
+
+fake_gh_option_allows_option_like_value() {
+  case "$1 $2" in
+    "pr create --title"|"pr create --body"|"pr edit --title"|"pr edit --body")
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+validate_auth_status_args() {
+  local i
+  local arg
+
+  for ((i = 3; i <= $#; i++)); do
+    arg="${!i}"
+    case "$arg" in
+      --hostname)
+        require_fake_option_value "auth status" "$arg" "$i" "$#" "$@"
+        i=$((i + 1))
+        ;;
+      --*)
+        fail_unsupported_option "auth status" "$arg"
+        ;;
+      *)
+        fail_unsupported_argument "auth status" "$arg"
+        ;;
+    esac
+  done
+}
+
+validate_repo_view_args() {
+  local i
+  local arg
+  local repo_seen=false
+
+  for ((i = 3; i <= $#; i++)); do
+    arg="${!i}"
+    case "$arg" in
+      --json|--jq)
+        require_fake_option_value "repo view" "$arg" "$i" "$#" "$@"
+        i=$((i + 1))
+        ;;
+      --*)
+        fail_unsupported_option "repo view" "$arg"
+        ;;
+      *)
+        if [ "$repo_seen" = "true" ]; then
+          fail_unsupported_argument "repo view" "$arg"
+        fi
+        repo_seen=true
+        ;;
+    esac
+  done
+}
+
+validate_pr_list_args() {
+  local i
+  local arg
+
+  for ((i = 3; i <= $#; i++)); do
+    arg="${!i}"
+    case "$arg" in
+      --repo|--head|--state|--json|--jq)
+        require_fake_option_value "pr list" "$arg" "$i" "$#" "$@"
+        i=$((i + 1))
+        ;;
+      --*)
+        fail_unsupported_option "pr list" "$arg"
+        ;;
+      *)
+        fail_unsupported_argument "pr list" "$arg"
+        ;;
+    esac
+  done
+}
+
+validate_pr_view_args() {
+  local i
+  local arg
+  local selector_seen=false
+
+  for ((i = 3; i <= $#; i++)); do
+    arg="${!i}"
+    case "$arg" in
+      --repo|--json|--jq)
+        require_fake_option_value "pr view" "$arg" "$i" "$#" "$@"
+        i=$((i + 1))
+        ;;
+      --web)
+        ;;
+      --*)
+        fail_unsupported_option "pr view" "$arg"
+        ;;
+      *)
+        if [ "$selector_seen" = "true" ]; then
+          fail_unsupported_argument "pr view" "$arg"
+        fi
+        selector_seen=true
+        ;;
+    esac
+  done
+}
+
+validate_pr_create_args() {
+  local i
+  local arg
+
+  for ((i = 3; i <= $#; i++)); do
+    arg="${!i}"
+    case "$arg" in
+      --repo|--base|--head|--label|--reviewer|--assignee|--title|--body|--body-file|--template)
+        require_fake_option_value "pr create" "$arg" "$i" "$#" "$@"
+        i=$((i + 1))
+        ;;
+      --draft|--editor|--fill|--fill-first|--fill-verbose)
+        ;;
+      --*)
+        fail_unsupported_option "pr create" "$arg"
+        ;;
+      *)
+        fail_unsupported_argument "pr create" "$arg"
+        ;;
+    esac
+  done
+}
+
+validate_pr_edit_args() {
+  local i
+  local arg
+  local selector_seen=false
+
+  for ((i = 3; i <= $#; i++)); do
+    arg="${!i}"
+    case "$arg" in
+      --repo|--add-label|--add-reviewer|--add-assignee|--base|--title|--body|--body-file)
+        require_fake_option_value "pr edit" "$arg" "$i" "$#" "$@"
+        i=$((i + 1))
+        ;;
+      --*)
+        fail_unsupported_option "pr edit" "$arg"
+        ;;
+      *)
+        if [ "$selector_seen" = "true" ]; then
+          fail_unsupported_argument "pr edit" "$arg"
+        fi
+        selector_seen=true
+        ;;
+    esac
+  done
+}
+
+validate_pr_merge_args() {
+  local i
+  local arg
+  local selector_seen=false
+
+  for ((i = 3; i <= $#; i++)); do
+    arg="${!i}"
+    case "$arg" in
+      --repo|--match-head-commit)
+        require_fake_option_value "pr merge" "$arg" "$i" "$#" "$@"
+        i=$((i + 1))
+        ;;
+      --auto|--disable-auto|--merge|--squash|--rebase|--delete-branch)
+        ;;
+      --*)
+        fail_unsupported_option "pr merge" "$arg"
+        ;;
+      *)
+        if [ "$selector_seen" = "true" ]; then
+          fail_unsupported_argument "pr merge" "$arg"
+        fi
+        selector_seen=true
+        ;;
+    esac
+  done
+}
+
 fake_pr_number() {
   if [ -n "${GIT_PR_FAKE_PR_NUMBER:-}" ]; then
     printf '%s\n' "$GIT_PR_FAKE_PR_NUMBER"
@@ -248,6 +465,7 @@ fake_pr_list_number() {
 
 case "${1-} ${2-}" in
   "auth status")
+    validate_auth_status_args "$@"
     auth_host="$(arg_after --hostname "$@" || true)"
     if [ -n "${GIT_PR_FAKE_EXPECT_AUTH_HOST:-}" ] && [ "$auth_host" != "$GIT_PR_FAKE_EXPECT_AUTH_HOST" ]; then
       printf 'fake gh: unexpected auth host: %s\n' "$auth_host" >&2
@@ -260,6 +478,7 @@ case "${1-} ${2-}" in
       printf 'fake gh: repo view does not support --repo\n' >&2
       exit 1
     fi
+    validate_repo_view_args "$@"
     repo="${3-}"
     if [ -z "$repo" ] || [ "${repo#-}" != "$repo" ]; then
       printf 'fake gh: repo view missing repository argument\n' >&2
@@ -273,6 +492,7 @@ case "${1-} ${2-}" in
     printf '%s\n' "${GIT_PR_FAKE_DEFAULT_BRANCH:-main}"
     ;;
   "pr view")
+    validate_pr_view_args "$@"
     json_field=""
     jq_expr=""
     repo="$(arg_after --repo "$@" || true)"
@@ -324,6 +544,7 @@ case "${1-} ${2-}" in
     fi
     ;;
   "pr list")
+    validate_pr_list_args "$@"
     jq_expr=""
     repo="$(arg_after --repo "$@" || true)"
     head="$(arg_after --head "$@" || true)"
@@ -384,10 +605,12 @@ case "${1-} ${2-}" in
     fi
     ;;
   "pr create")
+    validate_pr_create_args "$@"
     printf '%s\n' "${GIT_PR_FAKE_CREATED_PR_NUMBER:-1}" > "$GIT_PR_FAKE_LOG.created-pr"
     printf 'https://github.com/example/repo/pull/1\n'
     ;;
   "pr edit")
+    validate_pr_edit_args "$@"
     if has_arg --title "$@"; then
       arg_after --title "$@" > "$GIT_PR_FAKE_LOG.pr-edit-title"
     fi
@@ -403,6 +626,7 @@ case "${1-} ${2-}" in
     exit 0
     ;;
   "pr merge")
+    validate_pr_merge_args "$@"
     if has_arg --auto "$@" && has_arg --admin "$@"; then
       printf 'specify only one of `--auto`, `--disable-auto`, or `--admin`\n' >&2
       exit 1
@@ -426,18 +650,84 @@ FAKE_GH
   chmod 755 "$GIT_PR_FAKE_BIN/gh"
 }
 
+create_fake_copilot_contract_helper() {
+  cat > "$GIT_PR_FAKE_BIN/fake-copilot-contract.bash" <<'FAKE_COPILOT_CONTRACT'
+log_fake_copilot_call() {
+  {
+    printf 'copilot'
+    for arg in "$@"; do
+      printf ' %q' "$arg"
+    done
+    printf '\n'
+  } >> "$GIT_PR_FAKE_LOG"
+}
+
+fail_fake_copilot_option() {
+  printf 'fake copilot: unsupported option: %s\n' "$1" >&2
+  exit 1
+}
+
+fail_fake_copilot_argument() {
+  printf 'fake copilot: unsupported argument: %s\n' "$1" >&2
+  exit 1
+}
+
+validate_fake_copilot_args() {
+  local i
+  local arg
+  local next
+  local prompt_seen=false
+  local prompt_value
+
+  for ((i = 1; i <= $#; i++)); do
+    arg="${!i}"
+    case "$arg" in
+      -s|--silent|--no-custom-instructions)
+        ;;
+      -p|--prompt)
+        next=$((i + 1))
+        if [ "$next" -gt "$#" ]; then
+          printf 'fake copilot: %s requires a value\n' "$arg" >&2
+          exit 1
+        fi
+        prompt_value="${!next}"
+        case "$prompt_value" in
+          @?*)
+            ;;
+          *)
+            printf 'fake copilot: prompt must be @file\n' >&2
+            exit 1
+            ;;
+        esac
+        prompt_seen=true
+        i=$next
+        ;;
+      -*)
+        fail_fake_copilot_option "$arg"
+        ;;
+      *)
+        fail_fake_copilot_argument "$arg"
+        ;;
+    esac
+  done
+
+  if [ "$prompt_seen" != "true" ]; then
+    printf 'fake copilot: prompt is required\n' >&2
+    exit 1
+  fi
+}
+FAKE_COPILOT_CONTRACT
+}
+
 create_fake_copilot() {
   cat > "$GIT_PR_FAKE_BIN/copilot" <<'FAKE_COPILOT'
 #!/usr/bin/env bash
 set -euo pipefail
 
-{
-  printf 'copilot'
-  for arg in "$@"; do
-    printf ' %q' "$arg"
-  done
-  printf '\n'
-} >> "$GIT_PR_FAKE_LOG"
+. "$GIT_PR_FAKE_BIN/fake-copilot-contract.bash"
+
+log_fake_copilot_call "$@"
+validate_fake_copilot_args "$@"
 
 if [ "${GIT_PR_FAKE_COPILOT_FAIL:-false}" = "true" ]; then
   exit 1

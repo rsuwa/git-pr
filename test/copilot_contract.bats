@@ -14,13 +14,10 @@ create_malformed_copilot() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-{
-  printf 'copilot'
-  for arg in "$@"; do
-    printf ' %q' "$arg"
-  done
-  printf '\n'
-} >> "$GIT_PR_FAKE_LOG"
+. "$GIT_PR_FAKE_BIN/fake-copilot-contract.bash"
+
+log_fake_copilot_call "$@"
+validate_fake_copilot_args "$@"
 
 printf 'unparseable copilot response\n'
 FAKE_COPILOT
@@ -32,13 +29,10 @@ create_empty_body_copilot() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-{
-  printf 'copilot'
-  for arg in "$@"; do
-    printf ' %q' "$arg"
-  done
-  printf '\n'
-} >> "$GIT_PR_FAKE_LOG"
+. "$GIT_PR_FAKE_BIN/fake-copilot-contract.bash"
+
+log_fake_copilot_call "$@"
+validate_fake_copilot_args "$@"
 
 cat <<'COPILOT_RESPONSE'
 __GIT_PR_TITLE__
@@ -55,13 +49,10 @@ create_backslash_copilot() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-{
-  printf 'copilot'
-  for arg in "$@"; do
-    printf ' %q' "$arg"
-  done
-  printf '\n'
-} >> "$GIT_PR_FAKE_LOG"
+. "$GIT_PR_FAKE_BIN/fake-copilot-contract.bash"
+
+log_fake_copilot_call "$@"
+validate_fake_copilot_args "$@"
 
 cat <<'COPILOT_RESPONSE'
 __GIT_PR_TITLE__
