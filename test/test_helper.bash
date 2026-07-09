@@ -237,11 +237,35 @@ require_fake_option_value() {
   local index="$3"
   local total="$4"
   local next=$((index + 1))
+  local next_value
+
+  shift 4
 
   if [ "$next" -gt "$total" ]; then
     printf 'fake gh: %s requires a value for %s\n' "$command_name" "$option" >&2
     exit 1
   fi
+
+  next_value="${!next}"
+  if ! fake_gh_option_allows_option_like_value "$command_name" "$option"; then
+    case "$next_value" in
+      --*)
+        printf 'fake gh: %s requires a value for %s\n' "$command_name" "$option" >&2
+        exit 1
+        ;;
+    esac
+  fi
+}
+
+fake_gh_option_allows_option_like_value() {
+  case "$1 $2" in
+    "pr create --title"|"pr create --body"|"pr edit --title"|"pr edit --body")
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 validate_auth_status_args() {
@@ -252,7 +276,7 @@ validate_auth_status_args() {
     arg="${!i}"
     case "$arg" in
       --hostname)
-        require_fake_option_value "auth status" "$arg" "$i" "$#"
+        require_fake_option_value "auth status" "$arg" "$i" "$#" "$@"
         i=$((i + 1))
         ;;
       --*)
@@ -274,7 +298,7 @@ validate_repo_view_args() {
     arg="${!i}"
     case "$arg" in
       --json|--jq)
-        require_fake_option_value "repo view" "$arg" "$i" "$#"
+        require_fake_option_value "repo view" "$arg" "$i" "$#" "$@"
         i=$((i + 1))
         ;;
       --*)
@@ -298,7 +322,7 @@ validate_pr_list_args() {
     arg="${!i}"
     case "$arg" in
       --repo|--head|--state|--json|--jq)
-        require_fake_option_value "pr list" "$arg" "$i" "$#"
+        require_fake_option_value "pr list" "$arg" "$i" "$#" "$@"
         i=$((i + 1))
         ;;
       --*)
@@ -320,7 +344,7 @@ validate_pr_view_args() {
     arg="${!i}"
     case "$arg" in
       --repo|--json|--jq)
-        require_fake_option_value "pr view" "$arg" "$i" "$#"
+        require_fake_option_value "pr view" "$arg" "$i" "$#" "$@"
         i=$((i + 1))
         ;;
       --web)
@@ -346,7 +370,7 @@ validate_pr_create_args() {
     arg="${!i}"
     case "$arg" in
       --repo|--base|--head|--label|--reviewer|--assignee|--title|--body|--body-file|--template)
-        require_fake_option_value "pr create" "$arg" "$i" "$#"
+        require_fake_option_value "pr create" "$arg" "$i" "$#" "$@"
         i=$((i + 1))
         ;;
       --draft|--editor|--fill|--fill-first|--fill-verbose)
@@ -370,7 +394,7 @@ validate_pr_edit_args() {
     arg="${!i}"
     case "$arg" in
       --repo|--add-label|--add-reviewer|--add-assignee|--base|--title|--body|--body-file)
-        require_fake_option_value "pr edit" "$arg" "$i" "$#"
+        require_fake_option_value "pr edit" "$arg" "$i" "$#" "$@"
         i=$((i + 1))
         ;;
       --*)
@@ -395,7 +419,7 @@ validate_pr_merge_args() {
     arg="${!i}"
     case "$arg" in
       --repo|--match-head-commit)
-        require_fake_option_value "pr merge" "$arg" "$i" "$#"
+        require_fake_option_value "pr merge" "$arg" "$i" "$#" "$@"
         i=$((i + 1))
         ;;
       --auto|--disable-auto|--merge|--squash|--rebase|--delete-branch)
@@ -668,7 +692,7 @@ validate_fake_copilot_args() {
         fi
         prompt_value="${!next}"
         case "$prompt_value" in
-          @*)
+          @?*)
             ;;
           *)
             printf 'fake copilot: prompt must be @file\n' >&2

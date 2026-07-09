@@ -34,6 +34,13 @@ setup() {
   [[ "$output" == *"fake gh: unsupported option for pr merge: --admin"* ]]
 }
 
+@test "fake gh rejects value-taking options followed by another option" {
+  run gh pr merge 123 --repo example/repo --squash --match-head-commit --delete-branch
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"fake gh: pr merge requires a value for --match-head-commit"* ]]
+}
+
 @test "fake copilot rejects unsupported options" {
   create_fake_copilot
   prompt_file="$BATS_TEST_TMPDIR/prompt.txt"
@@ -49,6 +56,15 @@ setup() {
   create_fake_copilot
 
   run copilot -s --no-custom-instructions -p "plain prompt"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"fake copilot: prompt must be @file"* ]]
+}
+
+@test "fake copilot rejects empty prompt file reference" {
+  create_fake_copilot
+
+  run copilot -s --no-custom-instructions -p @
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"fake copilot: prompt must be @file"* ]]
