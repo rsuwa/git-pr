@@ -1947,27 +1947,49 @@ copilot_fallback() {
   fi
 }
 
-load_repository_context() {
+require_pr_flow_commands() {
   require_cmd git
   require_gh_cli
+}
 
+load_git_repository_context() {
   repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "Not a git repository."
   current_branch=$(git -C "$repo_root" branch --show-current)
   [ -n "$current_branch" ] || die "Detached HEAD. Checkout a branch first."
-  if [ "$use_copilot" = "true" ]; then
-    load_git_pr_config
-  fi
+}
 
+load_github_remote_context() {
   if ! origin_url=$(git -C "$repo_root" remote get-url origin 2>/dev/null); then
     die "Remote 'origin' not found."
   fi
   github_repo=$(github_repo_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$origin_url")"
   github_host=$(github_host_from_origin_url "$origin_url") || die "Remote 'origin' is not a supported GitHub repository URL: $(redact_url "$origin_url")"
   github_owner=$(github_owner_from_repo "$github_repo")
+}
 
+ensure_github_auth_context() {
   if ! gh auth status --hostname "$github_host" >/dev/null 2>&1; then
     die "GitHub CLI is not authenticated for $github_host. $(github_cli_auth_message "$github_host")"
   fi
+}
+
+load_repository_context() {
+  require_pr_flow_commands
+  load_git_repository_context
+  if [ "$use_copilot" = "true" ]; then
+    load_git_pr_config
+  fi
+  load_github_remote_context
+  ensure_github_auth_context
+}
+
+refresh_current_pr_context() {
+  pr_number=$(get_current_pr_number)
+}
+
+reset_pr_generation_context() {
+  base_ref=""
+  commit_count=0
 }
 
 handle_merge_action() {
@@ -1975,7 +1997,7 @@ handle_merge_action() {
     return 0
   fi
 
-  pr_number=$(get_current_pr_number)
+  refresh_current_pr_context
   [ -n "$pr_number" ] || die "No open PR found for current branch."
 
   if [ "$action" = "auto-merge" ] && [ "$auto_merge_disable" = "true" ]; then
@@ -2065,9 +2087,8 @@ prepare_create_pr_before_push() {
 }
 
 prepare_pr_flow_before_push() {
-  pr_number=$(get_current_pr_number)
-  base_ref=""
-  commit_count=0
+  refresh_current_pr_context
+  reset_pr_generation_context
 
   resolve_pr_flow_copilot_mode
 
@@ -2246,7 +2267,7 @@ run_create_pr_flow() {
   "${pr_create_cmd[@]}"
 
   if [ "$auto_merge" = "true" ] || [ "$open_web" = "true" ]; then
-    pr_number=$(get_current_pr_number)
+    refresh_current_pr_context
     [ -n "$pr_number" ] || die "Failed to find PR after creation."
   fi
 
@@ -2267,7 +2288,7 @@ run_pr_flow() {
   push_current_branch
 
   if [ -z "$pr_number" ]; then
-    pr_number=$(get_current_pr_number)
+    refresh_current_pr_context
     if [ -z "$pr_number_before_push" ] && [ -n "$pr_number" ]; then
       resolve_pr_flow_copilot_mode
       prepare_existing_pr_before_push
@@ -2282,19 +2303,14 @@ run_pr_flow() {
   run_create_pr_flow
 }
 
-init_option_defaults() {
+init_action_state() {
   action="create"
+  doctor_with_copilot="false"
+}
+
+init_pr_content_state() {
   base_branch=""
   base_branch_explicit="false"
-  merge_method="merge"
-  merge_method_explicit="false"
-  auto_merge="false"
-  auto_merge_explicit="false"
-  auto_merge_delete_branch="false"
-  auto_merge_admin="false"
-  auto_merge_disable="false"
-  auto_merge_match_head=""
-  auto_merge_match_head_explicit="false"
   draft="false"
   draft_explicit="false"
   open_web="false"
@@ -2305,6 +2321,44 @@ init_option_defaults() {
   fill_mode_explicit="false"
   fill_mode_conflict="false"
   no_fill_explicit="false"
+  skip_edit="false"
+  editor="false"
+  template_file=""
+  template_file_explicit="false"
+  template_resolved="false"
+  title=""
+  title_explicit="false"
+  body=""
+  body_explicit="false"
+  body_file=""
+  body_file_explicit="false"
+}
+
+init_metadata_state() {
+  label_explicit="false"
+  reviewer_explicit="false"
+  assignee_explicit="false"
+  label_args=()
+  reviewer_args=()
+  assignee_args=()
+  edit_label_args=()
+  edit_reviewer_args=()
+  edit_assignee_args=()
+}
+
+init_merge_state() {
+  merge_method="merge"
+  merge_method_explicit="false"
+  auto_merge="false"
+  auto_merge_explicit="false"
+  auto_merge_delete_branch="false"
+  auto_merge_admin="false"
+  auto_merge_disable="false"
+  auto_merge_match_head=""
+  auto_merge_match_head_explicit="false"
+}
+
+init_copilot_state() {
   use_copilot="false"
   copilot_mode="auto"
   copilot_mode_explicit="false"
@@ -2313,35 +2367,26 @@ init_option_defaults() {
   language="${GIT_PR_LANGUAGE:-}"
   language_explicit="false"
   diff_exclude_explicit="false"
-  label_explicit="false"
-  reviewer_explicit="false"
-  assignee_explicit="false"
-  skip_edit="false"
-  editor="false"
-  template_file=""
-  template_file_explicit="false"
-  title=""
-  title_explicit="false"
-  body=""
-  body_explicit="false"
-  body_file=""
-  body_file_explicit="false"
   copilot_existing_title=""
   copilot_existing_body=""
   copilot_existing_body_loaded="false"
   copilot_update_effective="false"
   copilot_mode_effective="auto"
-  doctor_with_copilot="false"
-  template_resolved="false"
-  parse_option_shift=0
-  label_args=()
-  reviewer_args=()
-  assignee_args=()
-  edit_label_args=()
-  edit_reviewer_args=()
-  edit_assignee_args=()
   diff_exclude_args=()
   diff_excludes=()
+}
+
+init_parser_state() {
+  parse_option_shift=0
+}
+
+init_option_defaults() {
+  init_action_state
+  init_pr_content_state
+  init_metadata_state
+  init_merge_state
+  init_copilot_state
+  init_parser_state
 }
 
 parse_action_argument() {
