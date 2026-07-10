@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Refactor global option initialization, repository context loading, and PR flow
+  state boundaries without changing the CLI contract.
+
 ## 0.3.5 - 2026-07-09
 
 - Fix default branch discovery with current GitHub CLI by using the supported
