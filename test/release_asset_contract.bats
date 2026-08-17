@@ -125,6 +125,24 @@ assert_checksum_diagnostic() {
   [[ "$output" == *"Unexpected release asset: Git-Pr"* ]]
 }
 
+@test "build and verify reject extra entries when invoked with noglob" {
+  local build_dir="$BATS_TEST_TMPDIR/non-empty"
+  local release_dir="$BATS_TEST_TMPDIR/release"
+
+  mkdir -p "$build_dir"
+  printf 'existing\n' > "$build_dir/.extra"
+  run bash -f "$BUILD_RELEASE_ASSETS" "$build_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must be empty"* ]]
+
+  run "$BUILD_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+  printf 'unexpected\n' > "$release_dir/.extra"
+  run bash -f "$VERIFY_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected release asset: .extra"* ]]
+}
+
 @test "verify accepts a valid bundle with its matching release tag" {
   local release_dir="$BATS_TEST_TMPDIR/release"
   local expected_tag

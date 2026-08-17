@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+set +f
 export LC_ALL=C
 umask 022
 unset CDPATH GLOBIGNORE
