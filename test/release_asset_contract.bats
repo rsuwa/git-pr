@@ -180,6 +180,34 @@ assert_checksum_diagnostic() {
   [[ "$output" == *"Missing regular release asset: install.sh"* ]]
 }
 
+@test "verify rejects an update smoke command that succeeds without replacing the target" {
+  local fixture_root="$BATS_TEST_TMPDIR/no-op-update-repo"
+  local release_dir="$BATS_TEST_TMPDIR/no-op-update-release"
+
+  mkdir -p "$fixture_root/script"
+  cp "$BUILD_RELEASE_ASSETS" "$fixture_root/script/build-release-assets"
+  cp "$VERIFY_RELEASE_ASSETS" "$fixture_root/script/verify-release-assets"
+  cp "$REPO_ROOT/install.sh" "$fixture_root/install.sh"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'case "${1-}" in' \
+    '  --version) printf "git-pr 9.8.7\\n" ;;' \
+    '  update) exit 0 ;;' \
+    'esac' \
+    > "$fixture_root/git-pr"
+  chmod 755 "$fixture_root/git-pr" "$fixture_root/install.sh" \
+    "$fixture_root/script/build-release-assets" "$fixture_root/script/verify-release-assets"
+
+  run "$fixture_root/script/build-release-assets" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run "$fixture_root/script/verify-release-assets" "$release_dir" v9.8.7
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Updated git-pr differs"* ]]
+}
+
 @test "verify rejects a release tag that does not match the bundled version" {
   local release_dir="$BATS_TEST_TMPDIR/release"
   local expected_tag

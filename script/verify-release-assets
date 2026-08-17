@@ -112,6 +112,7 @@ cmp -s "$release_dir/git-pr" "$install_dir/git-pr" \
   || die "Installed git-pr differs from the staged release asset."
 
 cp "$release_dir/git-pr" "$update_dir/git-pr"
+printf '\n# release verification update sentinel\n' >> "$update_dir/git-pr"
 chmod 755 "$update_dir/git-pr"
 GIT_PR_UPDATE_URL="file://$smoke_release_dir/git-pr" \
 GIT_PR_UPDATE_CHECKSUM_URL="file://$smoke_release_dir/SHA256SUMS" \
