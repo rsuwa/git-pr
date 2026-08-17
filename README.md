@@ -436,8 +436,10 @@ branch exists on `origin` before pushing the current branch.
 Run the test suite:
 
 ```bash
-bash -n git-pr install.sh script/build-release-assets \
-  script/verify-release-assets test/test_helper.bash
+for script in git-pr install.sh script/build-release-assets \
+  script/verify-release-assets test/test_helper.bash; do
+  bash -n "$script"
+done
 shellcheck git-pr install.sh script/build-release-assets \
   script/verify-release-assets test/test_helper.bash test/*.bats
 npx -y bats test

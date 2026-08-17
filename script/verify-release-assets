@@ -81,7 +81,10 @@ cmp -s "$repo_root/git-pr" "$release_dir/git-pr" \
 cmp -s "$repo_root/install.sh" "$release_dir/install.sh" \
   || die "Staged install.sh differs from the canonical root release candidate."
 
-bash -n "$release_dir/git-pr" "$release_dir/install.sh"
+bash -n "$release_dir/git-pr" \
+  || die "Release asset is not valid Bash: git-pr"
+bash -n "$release_dir/install.sh" \
+  || die "Release asset is not valid Bash: install.sh"
 
 temp_root=$(mktemp -d "/tmp/git-pr-release-verify.XXXXXX") \
   || die "Failed to create release verification directory."

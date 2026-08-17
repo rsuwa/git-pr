@@ -23,6 +23,18 @@ write_checksums() {
     > "$release_dir/SHA256SUMS"
 }
 
+prepare_release_fixture() {
+  local fixture_root="$1"
+
+  mkdir -p "$fixture_root/script"
+  cp "$BUILD_RELEASE_ASSETS" "$fixture_root/script/build-release-assets"
+  cp "$VERIFY_RELEASE_ASSETS" "$fixture_root/script/verify-release-assets"
+  cp "$REPO_ROOT/git-pr" "$fixture_root/git-pr"
+  cp "$REPO_ROOT/install.sh" "$fixture_root/install.sh"
+  chmod 755 "$fixture_root/git-pr" "$fixture_root/install.sh" \
+    "$fixture_root/script/build-release-assets" "$fixture_root/script/verify-release-assets"
+}
+
 release_tag_for() {
   local release_dir="$1"
   local version_output
@@ -113,16 +125,37 @@ assert_checksum_diagnostic() {
   [ "$status" -eq 0 ]
 }
 
-@test "build and verify normalize inherited glob matching options" {
+@test "build normalizes inherited failglob" {
   local release_dir="$BATS_TEST_TMPDIR/release"
 
   run bash -O failglob "$BUILD_RELEASE_ASSETS" "$release_dir"
   [ "$status" -eq 0 ]
+}
 
-  printf 'unexpected\n' > "$release_dir/Git-Pr"
-  run bash -O nocasematch "$VERIFY_RELEASE_ASSETS" "$release_dir"
+@test "verify normalizes inherited nocasematch" {
+  local fixture_root="$BATS_TEST_TMPDIR/nocasematch-repo"
+  local release_dir="$BATS_TEST_TMPDIR/nocasematch-release"
+
+  prepare_release_fixture "$fixture_root"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'case "${1-}" in' \
+    '  --version) printf "GIT-PR 9.8.7\\n" ;;' \
+    '  update)' \
+    '    cp "${GIT_PR_UPDATE_URL#file://}" "$GIT_PR_UPDATE_INSTALL_PATH"' \
+    '    chmod 755 "$GIT_PR_UPDATE_INSTALL_PATH"' \
+    '    ;;' \
+    'esac' \
+    > "$fixture_root/git-pr"
+
+  run "$fixture_root/script/build-release-assets" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run bash -O nocasematch "$fixture_root/script/verify-release-assets" "$release_dir"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Unexpected release asset: Git-Pr"* ]]
+  [[ "$output" == *"invalid version"* ]]
 }
 
 @test "build and verify reject extra entries when invoked with noglob" {
@@ -176,6 +209,21 @@ assert_checksum_diagnostic() {
 
   run env GIT_PR_UPDATE_SHA256=invalid "$VERIFY_RELEASE_ASSETS" "$release_dir"
   [ "$status" -eq 0 ]
+}
+
+@test "verify syntax-checks install.sh independently" {
+  local fixture_root="$BATS_TEST_TMPDIR/invalid-install-repo"
+  local release_dir="$BATS_TEST_TMPDIR/invalid-install-release"
+
+  prepare_release_fixture "$fixture_root"
+  printf '\nexit 0\nif\n' >> "$fixture_root/install.sh"
+
+  run "$fixture_root/script/build-release-assets" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run "$fixture_root/script/verify-release-assets" "$release_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"install.sh"* ]]
 }
 
 @test "verify rejects a tampered asset and a tampered checksum file" {
@@ -243,10 +291,7 @@ assert_checksum_diagnostic() {
   local fixture_root="$BATS_TEST_TMPDIR/no-op-update-repo"
   local release_dir="$BATS_TEST_TMPDIR/no-op-update-release"
 
-  mkdir -p "$fixture_root/script"
-  cp "$BUILD_RELEASE_ASSETS" "$fixture_root/script/build-release-assets"
-  cp "$VERIFY_RELEASE_ASSETS" "$fixture_root/script/verify-release-assets"
-  cp "$REPO_ROOT/install.sh" "$fixture_root/install.sh"
+  prepare_release_fixture "$fixture_root"
   # shellcheck disable=SC2016
   printf '%s\n' \
     '#!/usr/bin/env bash' \
@@ -256,8 +301,6 @@ assert_checksum_diagnostic() {
     '  update) exit 0 ;;' \
     'esac' \
     > "$fixture_root/git-pr"
-  chmod 755 "$fixture_root/git-pr" "$fixture_root/install.sh" \
-    "$fixture_root/script/build-release-assets" "$fixture_root/script/verify-release-assets"
 
   run "$fixture_root/script/build-release-assets" "$release_dir"
   [ "$status" -eq 0 ]
