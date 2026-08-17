@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+export LC_ALL=C
+unset CDPATH
+
+usage() {
+  printf 'Usage: %s <remote> <tag>\n' "${0##*/}" >&2
+}
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+if [ "$#" -ne 2 ] || [ -z "${1-}" ] || [ -z "${2-}" ]; then
+  usage
+  exit 64
+fi
+
+remote="$1"
+tag="$2"
+tag_ref="refs/tags/$tag"
+peeled_tag_ref="$tag_ref^{}"
+
+git check-ref-format "$tag_ref" >/dev/null 2>&1 \
+  || die "Invalid release tag: $tag"
+
+local_commit=$(git rev-parse --verify 'HEAD^{commit}') \
+  || die "Unable to resolve the checked-out commit."
+remote_refs=$(git ls-remote --exit-code -- "$remote" "$tag_ref" "$peeled_tag_ref") \
+  || die "Release tag does not exist on remote $remote: $tag"
+remote_commit=$(printf '%s\n' "$remote_refs" | awk \
+  -v direct="$tag_ref" -v peeled="$peeled_tag_ref" '
+    $2 == direct { direct_sha = $1 }
+    $2 == peeled { peeled_sha = $1 }
+    END {
+      if (peeled_sha != "") {
+        print peeled_sha
+      } else if (direct_sha != "") {
+        print direct_sha
+      }
+    }
+  ')
+
+[ -n "$remote_commit" ] \
+  || die "Unable to resolve release tag on remote $remote: $tag"
+[ "$remote_commit" = "$local_commit" ] \
+  || die "Release tag $tag points to $remote_commit, not checked-out commit $local_commit."
+
+printf 'Verified remote release tag %s at %s\n' "$tag" "$local_commit"

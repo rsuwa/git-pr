@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Define and verify a standalone release asset staging contract before the
+  source file is physically split.
 - Refactor global option initialization, repository context loading, and PR flow
   state boundaries without changing the CLI contract.
 

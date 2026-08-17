@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+set +f
+export LC_ALL=C
+umask 022
+unset CDPATH GLOBIGNORE
+shopt -u dotglob failglob nocaseglob nocasematch nullglob
+
+usage() {
+  printf 'Usage: %s <release-directory> [expected-tag]\n' "${0##*/}" >&2
+}
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum < "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 < "$1" | awk '{print $1}'
+  else
+    die "Missing command: sha256sum or shasum"
+  fi
+}
+
+verify_asset_allowlist() {
+  local release_dir="$1"
+  local entry
+  local name
+
+  for entry in "$release_dir"/* "$release_dir"/.[!.]* "$release_dir"/..?*; do
+    if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+      continue
+    fi
+    name="${entry##*/}"
+    case "$name" in
+      git-pr|install.sh|SHA256SUMS)
+        ;;
+      *)
+        die "Unexpected release asset: $name"
+        ;;
+    esac
+  done
+}
+
+verify_static_assets() {
+  local release_dir="$1"
+  local repo_root="$2"
+  local asset
+  local asset_path
+  local git_pr_sha
+  local install_sha
+
+  if [ ! -r "$release_dir" ] || [ ! -x "$release_dir" ]; then
+    die "Release directory must be readable and searchable: $release_dir"
+  fi
+
+  for asset in git-pr install.sh SHA256SUMS; do
+    asset_path="$release_dir/$asset"
+    if [ -L "$asset_path" ] || [ ! -f "$asset_path" ]; then
+      die "Missing regular release asset: $asset"
+    fi
+  done
+
+  verify_asset_allowlist "$release_dir"
+  [ -x "$release_dir/git-pr" ] || die "Release asset is not executable: git-pr"
+  [ -x "$release_dir/install.sh" ] || die "Release asset is not executable: install.sh"
+
+  git_pr_sha=$(sha256_file "$release_dir/git-pr")
+  install_sha=$(sha256_file "$release_dir/install.sh")
+  if ! printf '%s  git-pr\n%s  install.sh\n' "$git_pr_sha" "$install_sha" \
+    | cmp -s - "$release_dir/SHA256SUMS"; then
+    die "SHA256SUMS does not match the staged release assets."
+  fi
+  cmp -s "$repo_root/git-pr" "$release_dir/git-pr" \
+    || die "Staged git-pr differs from the canonical root release candidate."
+  cmp -s "$repo_root/install.sh" "$release_dir/install.sh" \
+    || die "Staged install.sh differs from the canonical root release candidate."
+
+  bash -n "$release_dir/git-pr" \
+    || die "Release asset is not valid Bash: git-pr"
+  bash -n "$release_dir/install.sh" \
+    || die "Release asset is not valid Bash: install.sh"
+}
+
+verify_resulting_git_pr() {
+  local action="$1"
+  local path="$2"
+  local expected_asset="$3"
+  local expected_version="$4"
+  local working_dir="$5"
+  local result_version
+
+  if [ -L "$path" ] || [ ! -f "$path" ] || [ ! -x "$path" ]; then
+    die "$action git-pr is not a regular executable file: $path"
+  fi
+  cmp -s "$expected_asset" "$path" \
+    || die "$action git-pr differs from the staged release asset."
+  result_version=$(cd "$working_dir" && env HOME="$working_dir/home" \
+    PATH="/usr/bin:/bin" "$path" --version) \
+    || die "$action git-pr failed its standalone version check."
+  [ "$result_version" = "$expected_version" ] \
+    || die "$action git-pr returned an unexpected version: $result_version"
+}
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [ -z "${1-}" ]; then
+  usage
+  exit 64
+fi
+
+release_dir_input="$1"
+expected_tag="${2-}"
+[ -d "$release_dir_input" ] || die "Release directory not found: $release_dir_input"
+release_dir=$(cd "$release_dir_input" && pwd -P) || die "Failed to resolve release directory: $release_dir_input"
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+repo_root=$(cd "$script_dir/.." && pwd -P)
+
+verify_static_assets "$release_dir" "$repo_root"
+
+temp_root=$(mktemp -d "/tmp/git-pr-release-verify.XXXXXX") \
+  || die "Failed to create release verification directory."
+cleanup() {
+  rm -rf "$temp_root"
+}
+trap cleanup EXIT
+
+# Keep file:// smoke URLs free of caller-controlled path characters.
+smoke_release_dir="$temp_root/release-assets"
+ln -s "$release_dir" "$smoke_release_dir"
+
+install_dir="$temp_root/install"
+update_dir="$temp_root/update"
+smoke_home="$temp_root/home"
+mkdir -p "$install_dir" "$update_dir" "$smoke_home"
+
+asset_version=$(cd "$temp_root" && env HOME="$smoke_home" PATH="/usr/bin:/bin" \
+  "$release_dir/git-pr" --version)
+if [[ ! "$asset_version" =~ ^git-pr\ [0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  die "Release asset returned an invalid version: $asset_version"
+fi
+version="${asset_version#git-pr }"
+if [ -n "$expected_tag" ] && [ "$expected_tag" != "v$version" ]; then
+  die "Release tag $expected_tag does not match git-pr version $version."
+fi
+
+(
+  cd "$temp_root"
+  HOME="$smoke_home" \
+  PATH="/usr/bin:/bin" \
+  GIT_PR_INSTALL_URL="file://$smoke_release_dir/git-pr" \
+  GIT_PR_CHECKSUM_URL="file://$smoke_release_dir/SHA256SUMS" \
+  GIT_PR_INSTALL_SHA256='' \
+  GIT_PR_INSTALL_DIR="$install_dir" \
+    bash "$release_dir/install.sh" >/dev/null
+)
+verify_resulting_git_pr "Installed" "$install_dir/git-pr" \
+  "$release_dir/git-pr" "$asset_version" "$temp_root"
+
+cp "$release_dir/git-pr" "$update_dir/git-pr"
+printf '\n# release verification update sentinel\n' >> "$update_dir/git-pr"
+chmod 755 "$update_dir/git-pr"
+(
+  cd "$temp_root"
+  HOME="$smoke_home" \
+  PATH="/usr/bin:/bin" \
+  GIT_PR_UPDATE_URL="file://$smoke_release_dir/git-pr" \
+  GIT_PR_UPDATE_CHECKSUM_URL="file://$smoke_release_dir/SHA256SUMS" \
+  GIT_PR_UPDATE_SHA256='' \
+  GIT_PR_UPDATE_INSTALL_PATH="$update_dir/git-pr" \
+    "$update_dir/git-pr" update >/dev/null 2>&1
+)
+verify_resulting_git_pr "Updated" "$update_dir/git-pr" \
+  "$release_dir/git-pr" "$asset_version" "$temp_root"
+verify_static_assets "$release_dir" "$repo_root"
+
+printf 'Verified release assets for git-pr %s\n' "$version"
