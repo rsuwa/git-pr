@@ -264,8 +264,20 @@ assets:
 - `install.sh`
 - `SHA256SUMS`
 
-`SHA256SUMS` must include entries for at least `git-pr` and `install.sh`.
+`SHA256SUMS` must contain entries for `git-pr` and `install.sh`, in that order.
 The current `v0.3.5` release is published with all three assets.
+The release workflow builds these files in an isolated staging directory and
+verifies their root-file identity, checksums, Bash syntax, version, install
+flow, and update flow before upload. A release tag must equal `v` followed by
+the staged `git-pr --version` value. Tag validation runs on Linux and macOS;
+publishing starts only after both jobs pass.
+
+The root `git-pr` is the committed, reviewed release candidate and must remain
+a standalone executable with no runtime dependency on repository files. A
+future physical split under `src/` must use an explicit manifest order to
+generate the committed root file deterministically. CI must reject source and
+generated-file drift so the bytes tested at the root are the bytes uploaded as
+the release asset. Runtime `source src/*.bash` loading is outside this contract.
 
 Verify a release before using it:
 
@@ -424,14 +436,24 @@ branch exists on `origin` before pushing the current branch.
 Run the test suite:
 
 ```bash
-bash -n git-pr install.sh test/test_helper.bash
-shellcheck git-pr install.sh test/test_helper.bash test/*.bats
+bash -n git-pr install.sh script/build-release-assets \
+  script/verify-release-assets test/test_helper.bash
+shellcheck git-pr install.sh script/build-release-assets \
+  script/verify-release-assets test/test_helper.bash test/*.bats
 npx -y bats test
 ```
 
-CI runs these checks on Linux and macOS. It also exercises release-style
-`install.sh` and `git pr update` flows against local `file://` assets with
-`SHA256SUMS`.
+Build and verify the exact files used by the release workflow:
+
+```bash
+release_dir=$(mktemp -d)
+./script/build-release-assets "$release_dir"
+./script/verify-release-assets "$release_dir"
+```
+
+CI runs these checks on Linux and macOS. Release verification also exercises
+release-style `install.sh` and `git pr update` flows against local `file://`
+assets with `SHA256SUMS`.
 
 The real Copilot CLI smoke test is opt-in and skipped by default. It performs a
 real Copilot request and may consume account quota and time. To run it, install

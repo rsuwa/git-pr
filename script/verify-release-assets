@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+export LC_ALL=C
+umask 022
+
+usage() {
+  printf 'Usage: %s <release-directory> [expected-tag]\n' "${0##*/}" >&2
+}
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    die "Missing command: sha256sum or shasum"
+  fi
+}
+
+verify_asset_allowlist() {
+  local release_dir="$1"
+  local entry
+  local name
+
+  for entry in "$release_dir"/* "$release_dir"/.[!.]* "$release_dir"/..?*; do
+    if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+      continue
+    fi
+    name="${entry##*/}"
+    case "$name" in
+      git-pr|install.sh|SHA256SUMS)
+        ;;
+      *)
+        die "Unexpected release asset: $name"
+        ;;
+    esac
+  done
+}
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [ -z "${1-}" ]; then
+  usage
+  exit 64
+fi
+
+release_dir_input="$1"
+expected_tag="${2-}"
+[ -d "$release_dir_input" ] || die "Release directory not found: $release_dir_input"
+release_dir=$(cd "$release_dir_input" && pwd -P) || die "Failed to resolve release directory: $release_dir_input"
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+repo_root=$(cd "$script_dir/.." && pwd -P)
+
+for asset in git-pr install.sh SHA256SUMS; do
+  asset_path="$release_dir/$asset"
+  if [ -L "$asset_path" ] || [ ! -f "$asset_path" ]; then
+    die "Missing regular release asset: $asset"
+  fi
+done
+
+verify_asset_allowlist "$release_dir"
+[ -x "$release_dir/git-pr" ] || die "Release asset is not executable: git-pr"
+[ -x "$release_dir/install.sh" ] || die "Release asset is not executable: install.sh"
+
+git_pr_sha=$(sha256_file "$release_dir/git-pr")
+install_sha=$(sha256_file "$release_dir/install.sh")
+expected_sums=$(printf '%s  git-pr\n%s  install.sh' "$git_pr_sha" "$install_sha")
+checksum_lines=$(wc -l < "$release_dir/SHA256SUMS" | tr -d '[:space:]')
+[ "$checksum_lines" = "2" ] || die "SHA256SUMS must contain exactly two entries."
+actual_sums=$(cat "$release_dir/SHA256SUMS")
+[ "$actual_sums" = "$expected_sums" ] || die "SHA256SUMS does not match the staged release assets."
+cmp -s "$repo_root/git-pr" "$release_dir/git-pr" \
+  || die "Staged git-pr differs from the canonical root release candidate."
+cmp -s "$repo_root/install.sh" "$release_dir/install.sh" \
+  || die "Staged install.sh differs from the canonical root release candidate."
+
+bash -n "$release_dir/git-pr" "$release_dir/install.sh"
+
+temp_root=$(mktemp -d "${TMPDIR:-/tmp}/git-pr-release-verify.XXXXXX") \
+  || die "Failed to create release verification directory."
+cleanup() {
+  rm -rf "$temp_root"
+}
+trap cleanup EXIT
+
+asset_version=$(cd "$temp_root" && env PATH="/usr/bin:/bin" "$release_dir/git-pr" --version)
+if [[ ! "$asset_version" =~ ^git-pr\ [0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  die "Release asset returned an invalid version: $asset_version"
+fi
+version="${asset_version#git-pr }"
+if [ -n "$expected_tag" ] && [ "$expected_tag" != "v$version" ]; then
+  die "Release tag $expected_tag does not match git-pr version $version."
+fi
+
+install_dir="$temp_root/install"
+update_dir="$temp_root/update"
+mkdir -p "$install_dir" "$update_dir"
+
+GIT_PR_INSTALL_URL="file://$release_dir/git-pr" \
+GIT_PR_CHECKSUM_URL="file://$release_dir/SHA256SUMS" \
+GIT_PR_INSTALL_DIR="$install_dir" \
+  bash "$release_dir/install.sh" >/dev/null
+cmp -s "$release_dir/git-pr" "$install_dir/git-pr" \
+  || die "Installed git-pr differs from the staged release asset."
+
+cp "$release_dir/git-pr" "$update_dir/git-pr"
+chmod 755 "$update_dir/git-pr"
+GIT_PR_UPDATE_URL="file://$release_dir/git-pr" \
+GIT_PR_UPDATE_CHECKSUM_URL="file://$release_dir/SHA256SUMS" \
+GIT_PR_UPDATE_INSTALL_PATH="$update_dir/git-pr" \
+  "$update_dir/git-pr" update >/dev/null 2>&1
+cmp -s "$release_dir/git-pr" "$update_dir/git-pr" \
+  || die "Updated git-pr differs from the staged release asset."
+
+printf 'Verified release assets for git-pr %s\n' "$version"
