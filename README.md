@@ -264,14 +264,24 @@ assets:
 - `install.sh`
 - `SHA256SUMS`
 
-`SHA256SUMS` must contain entries for `git-pr` and `install.sh`, in that order.
+`SHA256SUMS` is byte-exact: it must contain exactly two newline-terminated
+lines, in this order, with two spaces between each lowercase SHA-256 digest and
+filename:
+
+```text
+<git-pr SHA-256>  git-pr
+<install.sh SHA-256>  install.sh
+```
+
+Use `script/build-release-assets` to generate this file.
 The current `v0.3.5` release is published with all three assets.
 The release workflow builds these files in an isolated staging directory and
 verifies their root-file identity, checksums, Bash syntax, version, install
 flow, and update flow before upload. A release tag must equal `v` followed by
 the staged `git-pr --version` value and must still point to the checked-out,
-validated commit on `origin` immediately before upload. Tag validation runs on
-Linux and macOS; publishing starts only after both jobs pass.
+validated commit on `origin` immediately before upload. Linux and macOS both
+validate the tag/version match; the Ubuntu publish job also validates the
+remote tag target after both jobs pass.
 
 The root `git-pr` is the committed, reviewed release candidate and must remain
 a standalone executable with no runtime dependency on repository files. A

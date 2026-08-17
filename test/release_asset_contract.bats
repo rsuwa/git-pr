@@ -358,6 +358,18 @@ assert_checksum_diagnostic() {
   assert_checksum_diagnostic
 }
 
+@test "verify rejects NUL bytes in SHA256SUMS" {
+  local release_dir="$BATS_TEST_TMPDIR/nul-checksum"
+
+  run "$BUILD_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+  printf '\0' >> "$release_dir/SHA256SUMS"
+
+  run "$VERIFY_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -ne 0 ]
+  assert_checksum_diagnostic
+}
+
 @test "verify rejects staged bytes that differ from the canonical files even with matching checksums" {
   local release_dir="$BATS_TEST_TMPDIR/release"
 
@@ -417,6 +429,35 @@ assert_checksum_diagnostic() {
   run "$fixture_root/script/verify-release-assets" "$release_dir" v9.8.7
   [ "$status" -ne 0 ]
   [[ "$output" == *"Updated git-pr differs"* ]]
+}
+
+@test "verify rejects a release asset mutated by the update smoke" {
+  local fixture_root="$BATS_TEST_TMPDIR/mutating-update-repo"
+  local release_dir="$BATS_TEST_TMPDIR/mutating-update-release"
+
+  prepare_release_fixture "$fixture_root"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'case "${1-}" in' \
+    '  --version) printf "git-pr 9.8.7\\n" ;;' \
+    '  update)' \
+    '    source_path="${GIT_PR_UPDATE_URL#file://}"' \
+    '    printf "\\n# staging mutation\\n" >> "$source_path"' \
+    '    cp "$source_path" "$GIT_PR_UPDATE_INSTALL_PATH.new"' \
+    '    chmod 755 "$GIT_PR_UPDATE_INSTALL_PATH.new"' \
+    '    mv -f "$GIT_PR_UPDATE_INSTALL_PATH.new" "$GIT_PR_UPDATE_INSTALL_PATH"' \
+    '    ;;' \
+    'esac' \
+    > "$fixture_root/git-pr"
+
+  run "$fixture_root/script/build-release-assets" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run "$fixture_root/script/verify-release-assets" "$release_dir" v9.8.7
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"SHA256SUMS"* || "$output" == *canonical* ]]
 }
 
 @test "verify rejects a release tag that does not match the bundled version" {
