@@ -80,12 +80,16 @@ cmp -s "$repo_root/install.sh" "$release_dir/install.sh" \
 
 bash -n "$release_dir/git-pr" "$release_dir/install.sh"
 
-temp_root=$(mktemp -d "${TMPDIR:-/tmp}/git-pr-release-verify.XXXXXX") \
+temp_root=$(mktemp -d "/tmp/git-pr-release-verify.XXXXXX") \
   || die "Failed to create release verification directory."
 cleanup() {
   rm -rf "$temp_root"
 }
 trap cleanup EXIT
+
+# Keep file:// smoke URLs free of caller-controlled path characters.
+smoke_release_dir="$temp_root/release-assets"
+ln -s "$release_dir" "$smoke_release_dir"
 
 asset_version=$(cd "$temp_root" && env PATH="/usr/bin:/bin" "$release_dir/git-pr" --version)
 if [[ ! "$asset_version" =~ ^git-pr\ [0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -100,8 +104,8 @@ install_dir="$temp_root/install"
 update_dir="$temp_root/update"
 mkdir -p "$install_dir" "$update_dir"
 
-GIT_PR_INSTALL_URL="file://$release_dir/git-pr" \
-GIT_PR_CHECKSUM_URL="file://$release_dir/SHA256SUMS" \
+GIT_PR_INSTALL_URL="file://$smoke_release_dir/git-pr" \
+GIT_PR_CHECKSUM_URL="file://$smoke_release_dir/SHA256SUMS" \
 GIT_PR_INSTALL_DIR="$install_dir" \
   bash "$release_dir/install.sh" >/dev/null
 cmp -s "$release_dir/git-pr" "$install_dir/git-pr" \
@@ -109,8 +113,8 @@ cmp -s "$release_dir/git-pr" "$install_dir/git-pr" \
 
 cp "$release_dir/git-pr" "$update_dir/git-pr"
 chmod 755 "$update_dir/git-pr"
-GIT_PR_UPDATE_URL="file://$release_dir/git-pr" \
-GIT_PR_UPDATE_CHECKSUM_URL="file://$release_dir/SHA256SUMS" \
+GIT_PR_UPDATE_URL="file://$smoke_release_dir/git-pr" \
+GIT_PR_UPDATE_CHECKSUM_URL="file://$smoke_release_dir/SHA256SUMS" \
 GIT_PR_UPDATE_INSTALL_PATH="$update_dir/git-pr" \
   "$update_dir/git-pr" update >/dev/null 2>&1
 cmp -s "$release_dir/git-pr" "$update_dir/git-pr" \

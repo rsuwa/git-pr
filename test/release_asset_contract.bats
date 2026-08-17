@@ -109,6 +109,16 @@ assert_checksum_diagnostic() {
   [ "$status" -eq 0 ]
 }
 
+@test "verify accepts a release directory whose path contains spaces" {
+  local release_dir="$BATS_TEST_TMPDIR/release assets"
+
+  run "$BUILD_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run "$VERIFY_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+}
+
 @test "verify rejects a tampered asset and a tampered checksum file" {
   local asset_bundle="$BATS_TEST_TMPDIR/tampered-asset"
   local checksum_bundle="$BATS_TEST_TMPDIR/tampered-checksum"
