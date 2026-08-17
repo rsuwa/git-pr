@@ -99,10 +99,10 @@ For a reproducible install, pin both the downloaded installer and the payload
 URLs:
 
 ```bash
-curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.5/install.sh |
+curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.6/install.sh |
   env \
-    GIT_PR_INSTALL_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.5/git-pr" \
-    GIT_PR_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.5/SHA256SUMS" \
+    GIT_PR_INSTALL_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.6/git-pr" \
+    GIT_PR_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.6/SHA256SUMS" \
     bash
 ```
 
@@ -244,8 +244,8 @@ the executable only after checksum and Bash syntax validation pass.
 To update from a pinned release instead of `latest`:
 
 ```bash
-GIT_PR_UPDATE_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.5/git-pr" \
-GIT_PR_UPDATE_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.5/SHA256SUMS" \
+GIT_PR_UPDATE_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.6/git-pr" \
+GIT_PR_UPDATE_CHECKSUM_URL="https://github.com/rsuwa/git-pr/releases/download/v0.3.6/SHA256SUMS" \
   git pr update
 ```
 
@@ -274,7 +274,7 @@ filename:
 ```
 
 Use `script/build-release-assets` to generate this file.
-The current `v0.3.5` release is published with all three assets.
+The current `v0.3.6` release is published with all three assets.
 The release workflow builds these files in an isolated staging directory and
 verifies their root-file identity, checksums, Bash syntax, version, install
 flow, and update flow before upload. A release tag must equal `v` followed by
@@ -293,8 +293,8 @@ the release asset. Runtime `source src/*.bash` loading is outside this contract.
 Verify a release before using it:
 
 ```bash
-gh release view v0.3.5 --json tagName,isDraft,isPrerelease,assets
-curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.5/SHA256SUMS
+gh release view v0.3.6 --json tagName,isDraft,isPrerelease,assets
+curl -fsSL https://github.com/rsuwa/git-pr/releases/download/v0.3.6/SHA256SUMS
 ```
 
 Release publishing is expected to run the test suite, generate checksums, smoke

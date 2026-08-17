@@ -2,10 +2,14 @@
 
 ## Unreleased
 
+## 0.3.6 - 2026-08-18
+
 - Define and verify a standalone release asset staging contract before the
   source file is physically split.
 - Refactor global option initialization, repository context loading, and PR flow
   state boundaries without changing the CLI contract.
+- Harden fake GitHub CLI and Copilot CLI contracts so tests reject unsupported
+  external options and malformed argument placement.
 
 ## 0.3.5 - 2026-07-09
 
