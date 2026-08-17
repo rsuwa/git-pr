@@ -3,6 +3,8 @@
 set -euo pipefail
 export LC_ALL=C
 umask 022
+unset CDPATH GLOBIGNORE
+shopt -u dotglob failglob nocaseglob nocasematch nullglob
 
 usage() {
   printf 'Usage: %s <release-directory> [expected-tag]\n' "${0##*/}" >&2
@@ -106,6 +108,7 @@ mkdir -p "$install_dir" "$update_dir"
 
 GIT_PR_INSTALL_URL="file://$smoke_release_dir/git-pr" \
 GIT_PR_CHECKSUM_URL="file://$smoke_release_dir/SHA256SUMS" \
+GIT_PR_INSTALL_SHA256='' \
 GIT_PR_INSTALL_DIR="$install_dir" \
   bash "$release_dir/install.sh" >/dev/null
 cmp -s "$release_dir/git-pr" "$install_dir/git-pr" \
@@ -116,6 +119,7 @@ printf '\n# release verification update sentinel\n' >> "$update_dir/git-pr"
 chmod 755 "$update_dir/git-pr"
 GIT_PR_UPDATE_URL="file://$smoke_release_dir/git-pr" \
 GIT_PR_UPDATE_CHECKSUM_URL="file://$smoke_release_dir/SHA256SUMS" \
+GIT_PR_UPDATE_SHA256='' \
 GIT_PR_UPDATE_INSTALL_PATH="$update_dir/git-pr" \
   "$update_dir/git-pr" update >/dev/null 2>&1
 cmp -s "$release_dir/git-pr" "$update_dir/git-pr" \

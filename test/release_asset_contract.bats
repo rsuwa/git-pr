@@ -97,6 +97,34 @@ assert_checksum_diagnostic() {
   [ "$status" -eq 0 ]
 }
 
+@test "build and verify ignore an inherited CDPATH" {
+  local work_dir="$BATS_TEST_TMPDIR/work"
+  local cdpath_dir="$BATS_TEST_TMPDIR/cdpath"
+
+  mkdir -p "$work_dir" "$cdpath_dir/release"
+  cd "$work_dir"
+
+  run env CDPATH="$cdpath_dir" "$BUILD_RELEASE_ASSETS" release
+  [ "$status" -eq 0 ]
+  [ -f "$work_dir/release/git-pr" ]
+  [ ! -e "$cdpath_dir/release/git-pr" ]
+
+  run env CDPATH="$cdpath_dir" "$VERIFY_RELEASE_ASSETS" release
+  [ "$status" -eq 0 ]
+}
+
+@test "build and verify normalize inherited glob matching options" {
+  local release_dir="$BATS_TEST_TMPDIR/release"
+
+  run bash -O failglob "$BUILD_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  printf 'unexpected\n' > "$release_dir/Git-Pr"
+  run bash -O nocasematch "$VERIFY_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unexpected release asset: Git-Pr"* ]]
+}
+
 @test "verify accepts a valid bundle with its matching release tag" {
   local release_dir="$BATS_TEST_TMPDIR/release"
   local expected_tag
@@ -116,6 +144,19 @@ assert_checksum_diagnostic() {
   [ "$status" -eq 0 ]
 
   run "$VERIFY_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+}
+
+@test "verify ignores inherited direct checksum overrides" {
+  local release_dir="$BATS_TEST_TMPDIR/release"
+
+  run "$BUILD_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run env GIT_PR_INSTALL_SHA256=invalid "$VERIFY_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run env GIT_PR_UPDATE_SHA256=invalid "$VERIFY_RELEASE_ASSETS" "$release_dir"
   [ "$status" -eq 0 ]
 }
 

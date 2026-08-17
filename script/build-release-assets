@@ -3,6 +3,8 @@
 set -euo pipefail
 export LC_ALL=C
 umask 022
+unset CDPATH GLOBIGNORE
+shopt -u dotglob failglob nocaseglob nocasematch nullglob
 
 usage() {
   printf 'Usage: %s <destination-directory>\n' "${0##*/}" >&2
