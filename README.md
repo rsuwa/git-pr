@@ -269,8 +269,9 @@ The current `v0.3.5` release is published with all three assets.
 The release workflow builds these files in an isolated staging directory and
 verifies their root-file identity, checksums, Bash syntax, version, install
 flow, and update flow before upload. A release tag must equal `v` followed by
-the staged `git-pr --version` value. Tag validation runs on Linux and macOS;
-publishing starts only after both jobs pass.
+the staged `git-pr --version` value and must still point to the checked-out,
+validated commit on `origin` immediately before upload. Tag validation runs on
+Linux and macOS; publishing starts only after both jobs pass.
 
 The root `git-pr` is the committed, reviewed release candidate and must remain
 a standalone executable with no runtime dependency on repository files. A
@@ -437,11 +438,13 @@ Run the test suite:
 
 ```bash
 for script in git-pr install.sh script/build-release-assets \
-  script/verify-release-assets test/test_helper.bash; do
+  script/verify-release-assets script/verify-release-tag \
+  test/test_helper.bash; do
   bash -n "$script"
 done
 shellcheck git-pr install.sh script/build-release-assets \
-  script/verify-release-assets test/test_helper.bash test/*.bats
+  script/verify-release-assets script/verify-release-tag \
+  test/test_helper.bash test/*.bats
 npx -y bats test
 ```
 

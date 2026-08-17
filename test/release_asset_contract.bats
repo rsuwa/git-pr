@@ -4,6 +4,7 @@ setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/.."
   BUILD_RELEASE_ASSETS="$REPO_ROOT/script/build-release-assets"
   VERIFY_RELEASE_ASSETS="$REPO_ROOT/script/verify-release-assets"
+  VERIFY_RELEASE_TAG="$REPO_ROOT/script/verify-release-tag"
 }
 
 sha256_of() {
@@ -33,6 +34,20 @@ prepare_release_fixture() {
   cp "$REPO_ROOT/install.sh" "$fixture_root/install.sh"
   chmod 755 "$fixture_root/git-pr" "$fixture_root/install.sh" \
     "$fixture_root/script/build-release-assets" "$fixture_root/script/verify-release-assets"
+}
+
+prepare_tag_fixture() {
+  local repository="$1"
+  local remote="$2"
+
+  git init -q "$repository"
+  git init -q --bare "$remote"
+  git -C "$repository" config user.name "Release Contract Test"
+  git -C "$repository" config user.email "release-contract@example.invalid"
+  printf 'first\n' > "$repository/tracked"
+  git -C "$repository" add tracked
+  git -C "$repository" commit -q -m "First"
+  git -C "$repository" remote add origin "$remote"
 }
 
 release_tag_for() {
@@ -94,6 +109,28 @@ assert_checksum_diagnostic() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"must be empty"* ]]
   [ ! -e "$release_dir/git-pr" ]
+}
+
+@test "build and verify reject directories that cannot be listed" {
+  local build_dir="$BATS_TEST_TMPDIR/non-listable-build"
+  local release_dir="$BATS_TEST_TMPDIR/non-listable-release"
+
+  mkdir -p "$build_dir"
+  printf 'existing\n' > "$build_dir/.extra"
+  chmod 311 "$build_dir"
+  run "$BUILD_RELEASE_ASSETS" "$build_dir"
+  chmod 700 "$build_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"readable"* || "$output" == *"list"* ]]
+
+  run "$BUILD_RELEASE_ASSETS" "$release_dir"
+  [ "$status" -eq 0 ]
+  printf 'unexpected\n' > "$release_dir/.extra"
+  chmod 311 "$release_dir"
+  run "$VERIFY_RELEASE_ASSETS" "$release_dir"
+  chmod 700 "$release_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"readable"* || "$output" == *"list"* ]]
 }
 
 @test "build is deterministic across destination directories" {
@@ -188,8 +225,8 @@ assert_checksum_diagnostic() {
   [ "$status" -eq 0 ]
 }
 
-@test "verify accepts a release directory whose path contains spaces" {
-  local release_dir="$BATS_TEST_TMPDIR/release assets"
+@test "verify accepts a release path with URL and checksum-sensitive characters" {
+  local release_dir="$BATS_TEST_TMPDIR/release assets #%?\\path"
 
   run "$BUILD_RELEASE_ASSETS" "$release_dir"
   [ "$status" -eq 0 ]
@@ -224,6 +261,78 @@ assert_checksum_diagnostic() {
   run "$fixture_root/script/verify-release-assets" "$release_dir"
   [ "$status" -ne 0 ]
   [[ "$output" == *"install.sh"* ]]
+}
+
+@test "verify runs the update smoke outside the repository working directory" {
+  local fixture_root="$BATS_TEST_TMPDIR/repository-cwd-repo"
+  local release_dir="$BATS_TEST_TMPDIR/repository-cwd-release"
+
+  prepare_release_fixture "$fixture_root"
+  printf ':\n' > "$fixture_root/script/release-helper.bash"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'case "${1-}" in' \
+    '  --version) printf "git-pr 9.8.7\\n" ;;' \
+    '  update)' \
+    '    source script/release-helper.bash' \
+    '    cp "${GIT_PR_UPDATE_URL#file://}" "$GIT_PR_UPDATE_INSTALL_PATH.new"' \
+    '    chmod 755 "$GIT_PR_UPDATE_INSTALL_PATH.new"' \
+    '    mv -f "$GIT_PR_UPDATE_INSTALL_PATH.new" "$GIT_PR_UPDATE_INSTALL_PATH"' \
+    '    ;;' \
+    'esac' \
+    > "$fixture_root/git-pr"
+
+  run "$fixture_root/script/build-release-assets" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  cd "$fixture_root"
+  run "$fixture_root/script/verify-release-assets" "$release_dir" v9.8.7
+  [ "$status" -ne 0 ]
+}
+
+@test "verify rejects a non-executable installed result" {
+  local fixture_root="$BATS_TEST_TMPDIR/non-executable-install-repo"
+  local release_dir="$BATS_TEST_TMPDIR/non-executable-install-release"
+
+  prepare_release_fixture "$fixture_root"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'mkdir -p "$GIT_PR_INSTALL_DIR"' \
+    'cp "${GIT_PR_INSTALL_URL#file://}" "$GIT_PR_INSTALL_DIR/git-pr"' \
+    'chmod 644 "$GIT_PR_INSTALL_DIR/git-pr"' \
+    > "$fixture_root/install.sh"
+
+  run "$fixture_root/script/build-release-assets" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run "$fixture_root/script/verify-release-assets" "$release_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"regular executable"* ]]
+}
+
+@test "verify rejects a symlinked installed result" {
+  local fixture_root="$BATS_TEST_TMPDIR/symlink-install-repo"
+  local release_dir="$BATS_TEST_TMPDIR/symlink-install-release"
+
+  prepare_release_fixture "$fixture_root"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'mkdir -p "$GIT_PR_INSTALL_DIR"' \
+    'ln -s "${GIT_PR_INSTALL_URL#file://}" "$GIT_PR_INSTALL_DIR/git-pr"' \
+    > "$fixture_root/install.sh"
+
+  run "$fixture_root/script/build-release-assets" "$release_dir"
+  [ "$status" -eq 0 ]
+
+  run "$fixture_root/script/verify-release-assets" "$release_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"regular executable"* ]]
 }
 
 @test "verify rejects a tampered asset and a tampered checksum file" {
@@ -325,4 +434,40 @@ assert_checksum_diagnostic() {
   run "$VERIFY_RELEASE_ASSETS" "$release_dir" "$mismatched_tag"
   [ "$status" -ne 0 ]
   [[ "$output" == *tag* || "$output" == *Tag* || "$output" == *version* || "$output" == *Version* ]]
+}
+
+@test "remote tag verification accepts lightweight and annotated tags at HEAD" {
+  local repository="$BATS_TEST_TMPDIR/tag-repository"
+  local remote="$BATS_TEST_TMPDIR/tag-remote.git"
+
+  prepare_tag_fixture "$repository" "$remote"
+  git -C "$repository" tag v1.2.3-lightweight
+  git -C "$repository" tag -a v1.2.3-annotated -m "Release"
+  git -C "$repository" push -q origin \
+    refs/tags/v1.2.3-lightweight refs/tags/v1.2.3-annotated
+
+  cd "$repository"
+  run "$VERIFY_RELEASE_TAG" origin v1.2.3-lightweight
+  [ "$status" -eq 0 ]
+  run "$VERIFY_RELEASE_TAG" origin v1.2.3-annotated
+  [ "$status" -eq 0 ]
+}
+
+@test "remote tag verification rejects missing and mismatched tags" {
+  local repository="$BATS_TEST_TMPDIR/tag-repository"
+  local remote="$BATS_TEST_TMPDIR/tag-remote.git"
+
+  prepare_tag_fixture "$repository" "$remote"
+  git -C "$repository" tag v1.2.3-old
+  git -C "$repository" push -q origin refs/tags/v1.2.3-old
+  printf 'second\n' >> "$repository/tracked"
+  git -C "$repository" commit -q -am "Second"
+
+  cd "$repository"
+  run "$VERIFY_RELEASE_TAG" origin v1.2.3-missing
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"does not exist"* ]]
+  run "$VERIFY_RELEASE_TAG" origin v1.2.3-old
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not checked-out commit"* ]]
 }

@@ -32,9 +32,10 @@ jobs:
           bash -n install.sh
           bash -n script/build-release-assets
           bash -n script/verify-release-assets
+          bash -n script/verify-release-tag
           bash -n test/test_helper.bash
       - name: ShellCheck
-        run: shellcheck git-pr install.sh script/build-release-assets script/verify-release-assets test/test_helper.bash test/*.bats
+        run: shellcheck git-pr install.sh script/build-release-assets script/verify-release-assets script/verify-release-tag test/test_helper.bash test/*.bats
       - name: Tests
         run: bats test
       - name: Build release assets

@@ -34,9 +34,10 @@ jobs:
           bash -n install.sh
           bash -n script/build-release-assets
           bash -n script/verify-release-assets
+          bash -n script/verify-release-tag
           bash -n test/test_helper.bash
       - name: ShellCheck
-        run: shellcheck git-pr install.sh script/build-release-assets script/verify-release-assets test/test_helper.bash test/*.bats
+        run: shellcheck git-pr install.sh script/build-release-assets script/verify-release-assets script/verify-release-tag test/test_helper.bash test/*.bats
       - name: Tests
         run: bats test
       - name: Build release assets
@@ -51,10 +52,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Build release assets
         run: ./script/build-release-assets "$RUNNER_TEMP/git-pr-release"
       - name: Verify release assets
         run: ./script/verify-release-assets "$RUNNER_TEMP/git-pr-release" "$GITHUB_REF_NAME"
+      - name: Verify remote release tag
+        run: ./script/verify-release-tag origin "$GITHUB_REF_NAME"
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
