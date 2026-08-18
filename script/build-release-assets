@@ -37,6 +37,18 @@ directory_is_empty() {
   return 0
 }
 
+remove_empty_source_directories() {
+  local source_dir="$1"
+  local entry
+
+  # The source check proves these directories did not predate mkdir -p below.
+  for entry in "$source_dir"/* "$source_dir"/.[!.]* "$source_dir"/..?*; do
+    if [ -d "$entry" ] && [ ! -L "$entry" ]; then
+      find "$entry" -depth -type d -exec rmdir {} \; 2>/dev/null || :
+    fi
+  done
+}
+
 if [ "$#" -ne 1 ] || [ -z "${1-}" ]; then
   usage
   exit 64
@@ -52,6 +64,7 @@ esac
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 repo_root=$(cd "$script_dir/.." && pwd -P)
 source_checker="$repo_root/script/build-git-pr"
+source_dir="$repo_root/src"
 
 if [ -L "$source_checker" ] || [ ! -f "$source_checker" ] \
   || [ ! -x "$source_checker" ]; then
@@ -65,6 +78,12 @@ mkdir -p "$destination" || die "Failed to create release directory: $destination
 release_dir=$(cd "$destination" && pwd -P) || die "Failed to resolve release directory: $destination"
 
 [ "$release_dir" != "$repo_root" ] || die "Release directory must not be the repository root."
+case "$release_dir" in
+  "$source_dir"|"$source_dir"/*)
+    remove_empty_source_directories "$source_dir"
+    die "Release directory must not be inside the canonical source directory."
+    ;;
+esac
 if [ ! -r "$release_dir" ] || [ ! -x "$release_dir" ]; then
   die "Release directory must be readable and searchable: $release_dir"
 fi
