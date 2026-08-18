@@ -51,6 +51,15 @@ esac
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 repo_root=$(cd "$script_dir/.." && pwd -P)
+source_checker="$repo_root/script/build-git-pr"
+
+if [ -L "$source_checker" ] || [ ! -f "$source_checker" ] \
+  || [ ! -x "$source_checker" ]; then
+  die "Source assembly checker is not a non-symlink regular executable: $source_checker"
+fi
+if ! "$source_checker" --check; then
+  die "Source assembly check failed; refusing to stage release assets."
+fi
 
 mkdir -p "$destination" || die "Failed to create release directory: $destination"
 release_dir=$(cd "$destination" && pwd -P) || die "Failed to resolve release directory: $destination"

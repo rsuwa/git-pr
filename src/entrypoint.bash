@@ -1,0 +1,16 @@
+
+init_option_defaults
+parse_arguments "$@"
+apply_copilot_action_defaults
+
+handle_update_action
+handle_doctor_action
+validate_common_options
+validate_merge_options
+apply_auto_merge_action_defaults
+validate_pr_flow_body_file
+
+load_repository_context
+handle_merge_action
+
+run_pr_flow

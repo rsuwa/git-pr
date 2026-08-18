@@ -273,7 +273,10 @@ filename:
 <install.sh SHA-256>  install.sh
 ```
 
-Use `script/build-release-assets` to generate this file.
+Use `script/build-release-assets` to stage the standalone executable and
+generate this file. Before creating or modifying the staging directory, the
+builder runs `script/build-git-pr --check` and refuses to proceed if the
+canonical sources and committed root executable have drifted.
 The current `v0.3.6` release is published with all three assets.
 The release workflow builds these files in an isolated staging directory and
 verifies their root-file identity, checksums, Bash syntax, version, install
@@ -283,12 +286,15 @@ validated commit on `origin` immediately before upload. Linux and macOS both
 validate the tag/version match; the Ubuntu publish job also validates the
 remote tag target after both jobs pass.
 
-The root `git-pr` is the committed, reviewed release candidate and must remain
-a standalone executable with no runtime dependency on repository files. A
-future physical split under `src/` must use an explicit manifest order to
-generate the committed root file deterministically. CI must reject source and
-generated-file drift so the bytes tested at the root are the bytes uploaded as
-the release asset. Runtime `source src/*.bash` loading is outside this contract.
+The `src/*.bash` fragments are the canonical development source. The fixed
+manifest in `script/build-git-pr` defines their exact set and concatenation
+order and generates the root `git-pr` deterministically. Missing, duplicate, or
+unlisted fragments are drift and are rejected. The root `git-pr` is committed
+and reviewed as the generated standalone release candidate and must have no
+runtime dependency on repository files. CI and release staging run the
+non-mutating `./script/build-git-pr --check`, so the root bytes tested are the
+bytes uploaded as the release asset. Runtime `source src/*.bash` loading is
+forbidden.
 
 Verify a release before using it:
 
@@ -444,18 +450,35 @@ branch exists on `origin` before pushing the current branch.
 
 ## Development
 
-Run the test suite:
+Make executable implementation changes in `src/`, then regenerate and check the
+committed standalone executable:
 
 ```bash
-for script in git-pr install.sh script/build-release-assets \
+./script/build-git-pr
+./script/build-git-pr --check
+```
+
+Do not edit the generated root `git-pr` directly. Commit source fragment and
+generated-root changes together. The builder uses a fixed manifest rather than
+glob order, while `--check` is non-mutating and fails on manifest, fragment, or
+root drift.
+
+Run the validation suite:
+
+```bash
+for script in git-pr install.sh script/build-git-pr script/build-release-assets \
   script/verify-release-assets script/verify-release-tag \
   test/test_helper.bash; do
   bash -n "$script"
 done
-shellcheck git-pr install.sh script/build-release-assets \
+for source in src/*.bash; do
+  bash -n "$source"
+done
+./script/build-git-pr --check
+shellcheck git-pr install.sh script/build-git-pr script/build-release-assets \
   script/verify-release-assets script/verify-release-tag \
   test/test_helper.bash test/*.bats
-npx -y bats test
+bats test
 ```
 
 Build and verify the exact files used by the release workflow:

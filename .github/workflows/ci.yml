@@ -30,12 +30,18 @@ jobs:
         run: |
           bash -n git-pr
           bash -n install.sh
+          bash -n script/build-git-pr
           bash -n script/build-release-assets
           bash -n script/verify-release-assets
           bash -n script/verify-release-tag
           bash -n test/test_helper.bash
+          for source in src/*.bash; do
+            bash -n "$source"
+          done
       - name: ShellCheck
-        run: shellcheck git-pr install.sh script/build-release-assets script/verify-release-assets script/verify-release-tag test/test_helper.bash test/*.bats
+        run: shellcheck git-pr install.sh script/build-git-pr script/build-release-assets script/verify-release-assets script/verify-release-tag test/test_helper.bash test/*.bats
+      - name: Check generated git-pr
+        run: ./script/build-git-pr --check
       - name: Tests
         run: bats test
       - name: Build release assets
