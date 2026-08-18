@@ -1,5 +1,7 @@
 # git-pr
 
+English | [日本語](README.ja.md)
+
 `git-pr` is a small Git subcommand that streamlines the common GitHub pull
 request flow from a terminal:
 
