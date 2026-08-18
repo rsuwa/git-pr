@@ -279,7 +279,7 @@ builder runs `script/build-git-pr --check` and refuses to proceed if the
 canonical sources and committed root executable have drifted.
 The staging directory must not be the repository root or reside below the
 canonical `src/` directory.
-Every release is published with exactly these three assets.
+The release workflow publishes exactly these three assets.
 The release workflow builds these files in an isolated staging directory and
 verifies their root-file identity, checksums, Bash syntax, version, install
 flow, and update flow before upload. A release tag must equal `v` followed by
