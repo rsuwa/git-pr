@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+set +f
+export LC_ALL=C
+umask 022
+unset CDPATH GLOBIGNORE
+shopt -u dotglob failglob nocaseglob nocasematch nullglob
+
+usage() {
+  printf 'Usage: %s [--check]\n' "${0##*/}" >&2
+}
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+temp_path=""
+
+cleanup() {
+  if [ -n "$temp_path" ]; then
+    rm -f "$temp_path" || :
+  fi
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+source_manifest=(
+  "src/bootstrap.bash"
+  "src/doctor.bash"
+  "src/common-guards-and-cleanup.bash"
+  "src/copilot.bash"
+  "src/pr-command-policy.bash"
+  "src/action-dispatch-and-validation.bash"
+  "src/pr-content.bash"
+  "src/url-helpers.bash"
+  "src/self-update.bash"
+  "src/github-operations.bash"
+  "src/pr-flow.bash"
+  "src/cli-parser.bash"
+  "src/entrypoint.bash"
+)
+
+validate_source_tree() {
+  local source_dir="$repo_root/src"
+  local manifest_count="${#source_manifest[@]}"
+  local i
+  local j
+  local source
+  local source_name
+  local module_name
+  local expected_path
+  local entry
+  local relative_path
+  local allowed
+
+  if [ -L "$source_dir" ] || [ ! -d "$source_dir" ]; then
+    die "Source directory is not a non-symlink directory: $source_dir"
+  fi
+  if [ ! -r "$source_dir" ] || [ ! -x "$source_dir" ]; then
+    die "Source directory is not readable and searchable: $source_dir"
+  fi
+
+  i=0
+  while [ "$i" -lt "$manifest_count" ]; do
+    source="${source_manifest[$i]}"
+    case "$source" in
+      src/*.bash)
+        ;;
+      *)
+        die "Invalid source manifest entry: $source"
+        ;;
+    esac
+    source_name="${source#src/}"
+    case "$source_name" in
+      .*|*/*)
+        die "Invalid source manifest entry: $source"
+        ;;
+    esac
+    module_name="${source_name%.bash}"
+    case "$module_name" in
+      ''|[!a-z0-9]*|*[!a-z0-9-]*)
+        die "Invalid source manifest entry: $source"
+        ;;
+    esac
+
+    j=$((i + 1))
+    while [ "$j" -lt "$manifest_count" ]; do
+      if [ "$source" = "${source_manifest[$j]}" ]; then
+        die "Duplicate source manifest entry: $source"
+      fi
+      j=$((j + 1))
+    done
+
+    expected_path="$repo_root/$source"
+    if [ -L "$expected_path" ] || [ ! -f "$expected_path" ]; then
+      die "Manifest source is not a non-symlink regular file: $expected_path"
+    fi
+    if [ ! -r "$expected_path" ]; then
+      die "Manifest source is not readable: $expected_path"
+    fi
+    i=$((i + 1))
+  done
+
+  for entry in "$source_dir"/* "$source_dir"/.[!.]* "$source_dir"/..?*; do
+    if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+      continue
+    fi
+
+    relative_path="src/${entry##*/}"
+    allowed="false"
+    i=0
+    while [ "$i" -lt "$manifest_count" ]; do
+      if [ "$relative_path" = "${source_manifest[$i]}" ]; then
+        allowed="true"
+        break
+      fi
+      i=$((i + 1))
+    done
+    if [ "$allowed" != "true" ]; then
+      die "Unlisted source directory entry: $entry"
+    fi
+  done
+}
+
+validate_rebuild_root() {
+  if [ -e "$root_path" ] || [ -L "$root_path" ]; then
+    if [ -L "$root_path" ] || [ ! -f "$root_path" ]; then
+      die "Generated root is not a non-symlink regular file: $root_path"
+    fi
+  fi
+}
+
+validate_check_root() {
+  if [ -L "$root_path" ] || [ ! -f "$root_path" ] || [ ! -x "$root_path" ]; then
+    die "Generated root is not a non-symlink regular executable: $root_path"
+  fi
+}
+
+root_has_mode_755() {
+  local match
+
+  match=$(find "$1" -prune -type f -perm 0755 \
+    -exec printf '%s' match \; 2>/dev/null) || return 1
+  [ "$match" = "match" ]
+}
+
+assemble_source() {
+  local source
+
+  temp_path=$(mktemp "$repo_root/.git-pr.build.XXXXXX") || \
+    die "Failed to create assembly temporary file in: $repo_root"
+
+  for source in "${source_manifest[@]}"; do
+    if ! cat "$repo_root/$source" >> "$temp_path"; then
+      die "Failed to read manifest source: $repo_root/$source"
+    fi
+  done
+
+  if ! /bin/bash -n "$temp_path"; then
+    die "Assembled git-pr failed Bash syntax validation."
+  fi
+  chmod 755 "$temp_path" || die "Failed to set executable mode on assembled git-pr."
+}
+
+case "$#" in
+  0)
+    operation="rebuild"
+    ;;
+  1)
+    if [ "$1" != "--check" ]; then
+      usage
+      exit 64
+    fi
+    operation="check"
+    ;;
+  *)
+    usage
+    exit 64
+    ;;
+esac
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || \
+  die "Failed to resolve builder directory."
+repo_root=$(cd "$script_dir/.." && pwd -P) || \
+  die "Failed to resolve repository root."
+root_path="$repo_root/git-pr"
+
+if [ "$operation" = "check" ]; then
+  validate_check_root
+else
+  validate_rebuild_root
+fi
+validate_source_tree
+assemble_source
+
+if [ "$operation" = "check" ]; then
+  validate_check_root
+  if ! cmp -s "$temp_path" "$root_path"; then
+    die "Generated source differs from committed root: $root_path"
+  fi
+  exit 0
+fi
+
+validate_rebuild_root
+if [ -f "$root_path" ] && cmp -s "$temp_path" "$root_path" \
+  && root_has_mode_755 "$root_path"; then
+  exit 0
+fi
+
+validate_rebuild_root
+if ! mv -f "$temp_path" "$root_path"; then
+  die "Failed to replace generated root atomically: $root_path"
+fi
+temp_path=""

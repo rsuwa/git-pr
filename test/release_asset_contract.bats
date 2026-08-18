@@ -2,6 +2,7 @@
 
 setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/.."
+  BUILD_GIT_PR="$REPO_ROOT/script/build-git-pr"
   BUILD_RELEASE_ASSETS="$REPO_ROOT/script/build-release-assets"
   VERIFY_RELEASE_ASSETS="$REPO_ROOT/script/verify-release-assets"
   VERIFY_RELEASE_TAG="$REPO_ROOT/script/verify-release-tag"
@@ -30,10 +31,31 @@ prepare_release_fixture() {
   mkdir -p "$fixture_root/script"
   cp "$BUILD_RELEASE_ASSETS" "$fixture_root/script/build-release-assets"
   cp "$VERIFY_RELEASE_ASSETS" "$fixture_root/script/verify-release-assets"
+  cp "$BUILD_GIT_PR" "$fixture_root/script/build-git-pr"
   cp "$REPO_ROOT/git-pr" "$fixture_root/git-pr"
   cp "$REPO_ROOT/install.sh" "$fixture_root/install.sh"
+  cp -R "$REPO_ROOT/src" "$fixture_root/src"
   chmod 755 "$fixture_root/git-pr" "$fixture_root/install.sh" \
+    "$fixture_root/script/build-git-pr" \
     "$fixture_root/script/build-release-assets" "$fixture_root/script/verify-release-assets"
+  sync_release_fixture_source "$fixture_root"
+}
+
+sync_release_fixture_source() {
+  local fixture_root="$1"
+  local first_source=""
+  local source
+
+  for source in "$fixture_root"/src/*.bash; do
+    if [ -f "$source" ] && [ ! -L "$source" ]; then
+      [ -n "$first_source" ] || first_source="$source"
+      : > "$source"
+      chmod 644 "$source"
+    fi
+  done
+  [ -n "$first_source" ] || return 1
+  cp "$fixture_root/git-pr" "$first_source"
+  chmod 644 "$first_source"
 }
 
 prepare_tag_fixture() {
@@ -186,6 +208,7 @@ assert_checksum_diagnostic() {
     '    ;;' \
     'esac' \
     > "$fixture_root/git-pr"
+  sync_release_fixture_source "$fixture_root"
 
   run "$fixture_root/script/build-release-assets" "$release_dir"
   [ "$status" -eq 0 ]
@@ -283,6 +306,7 @@ assert_checksum_diagnostic() {
     '    ;;' \
     'esac' \
     > "$fixture_root/git-pr"
+  sync_release_fixture_source "$fixture_root"
 
   run "$fixture_root/script/build-release-assets" "$release_dir"
   [ "$status" -eq 0 ]
@@ -422,6 +446,7 @@ assert_checksum_diagnostic() {
     '  update) exit 0 ;;' \
     'esac' \
     > "$fixture_root/git-pr"
+  sync_release_fixture_source "$fixture_root"
 
   run "$fixture_root/script/build-release-assets" "$release_dir"
   [ "$status" -eq 0 ]
@@ -451,6 +476,7 @@ assert_checksum_diagnostic() {
     '    ;;' \
     'esac' \
     > "$fixture_root/git-pr"
+  sync_release_fixture_source "$fixture_root"
 
   run "$fixture_root/script/build-release-assets" "$release_dir"
   [ "$status" -eq 0 ]
