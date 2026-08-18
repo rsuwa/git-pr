@@ -62,6 +62,50 @@ assert_check_rejects_without_root_mutation() {
   cmp "$root_before" "$fixture_root/git-pr"
 }
 
+assert_no_assembly_temp_entries() {
+  local fixture_root="$1"
+  local entry
+
+  for entry in "$fixture_root"/.git-pr.build.*; do
+    if [ -e "$entry" ] || [ -L "$entry" ]; then
+      printf 'unexpected assembly temporary entry: %s\n' "$entry" >&2
+      return 1
+    fi
+  done
+}
+
+add_manifest_entry_after_first() {
+  local fixture_root="$1"
+  local manifest_entry="$2"
+  local source_name
+  local source_path
+  local builder_tmp="$fixture_root/script/build-git-pr.manifest-entry"
+
+  source_name="$(source_file_at "$fixture_root" first)"
+  source_name="${source_name##*/}"
+  source_path="src/$source_name"
+
+  if ! awk -v path="$source_path" -v entry="$manifest_entry" '
+    !changed && index($0, "\"" path "\"") {
+      print
+      match($0, /^[[:space:]]*/)
+      print substr($0, 1, RLENGTH) "\"" entry "\""
+      changed = 1
+      next
+    }
+    { print }
+    END { if (!changed) exit 1 }
+  ' "$fixture_root/script/build-git-pr" > "$builder_tmp"; then
+    rm -f "$builder_tmp"
+    printf 'could not locate %s in the fixed source manifest\n' \
+      "$source_path" >&2
+    return 1
+  fi
+
+  chmod 755 "$builder_tmp"
+  mv "$builder_tmp" "$fixture_root/script/build-git-pr"
+}
+
 duplicate_first_manifest_entry() {
   local fixture_root="$1"
   local source_name
@@ -217,6 +261,7 @@ assert_source_shape_rejected() {
   run "$fixture_root/script/build-git-pr"
   [ "$status" -ne 0 ]
   cmp "$root_before" "$fixture_root/git-pr"
+  assert_no_assembly_temp_entries "$fixture_root"
 }
 
 @test "rebuild rejects symlinked and non-regular roots without replacing them" {
@@ -252,13 +297,58 @@ assert_source_shape_rejected() {
   done
 }
 
-@test "source check rejects a duplicate fixed-manifest entry" {
+@test "source builder rejects a duplicate fixed-manifest entry" {
   local fixture_root="$BATS_TEST_TMPDIR/duplicate-manifest"
+  local root_before="$BATS_TEST_TMPDIR/duplicate-root.before"
 
   prepare_source_fixture "$fixture_root"
   duplicate_first_manifest_entry "$fixture_root"
-  assert_check_rejects_without_root_mutation "$fixture_root" \
-    "duplicate manifest entry"
+  cp "$fixture_root/git-pr" "$root_before"
+
+  run "$fixture_root/script/build-git-pr"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Duplicate source manifest entry"* ]]
+  cmp "$root_before" "$fixture_root/git-pr"
+  assert_no_assembly_temp_entries "$fixture_root"
+}
+
+@test "source builder rejects manifest entries outside direct visible Bash fragments" {
+  local case_name
+  local fixture_root
+  local manifest_entry
+  local root_before
+
+  for case_name in traversal duplicate-alias hidden non-bash; do
+    fixture_root="$BATS_TEST_TMPDIR/manifest-shape-$case_name"
+    root_before="$BATS_TEST_TMPDIR/manifest-shape-$case_name.before"
+    prepare_source_fixture "$fixture_root"
+
+    case "$case_name" in
+      traversal)
+        manifest_entry="src/../install.sh"
+        ;;
+      duplicate-alias)
+        manifest_entry="src/./entrypoint.bash"
+        ;;
+      hidden)
+        manifest_entry="src/.listed.bash"
+        printf ':\n' > "$fixture_root/$manifest_entry"
+        ;;
+      non-bash)
+        manifest_entry="src/notes.txt"
+        printf ':\n' > "$fixture_root/$manifest_entry"
+        ;;
+    esac
+
+    add_manifest_entry_after_first "$fixture_root" "$manifest_entry"
+    cp "$fixture_root/git-pr" "$root_before"
+
+    run "$fixture_root/script/build-git-pr"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Invalid source manifest entry"* ]]
+    cmp "$root_before" "$fixture_root/git-pr"
+    assert_no_assembly_temp_entries "$fixture_root"
+  done
 }
 
 @test "release build rejects drift before creating its destination" {
