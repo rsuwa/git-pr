@@ -200,6 +200,37 @@ assert_source_shape_rejected() {
   cmp "$root_before" "$REPO_ROOT/git-pr"
 }
 
+@test "source check re-enables globbing before enforcing the reverse allowlist" {
+  local fixture_root="$BATS_TEST_TMPDIR/noglob-extra-source"
+  local root_before="$BATS_TEST_TMPDIR/noglob-extra-source.before"
+
+  prepare_source_fixture "$fixture_root"
+  printf ':\n' > "$fixture_root/src/unlisted.bash"
+  cp "$fixture_root/git-pr" "$root_before"
+
+  run /bin/bash -f "$fixture_root/script/build-git-pr" --check
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Unlisted source directory entry:"* ]]
+  cmp "$root_before" "$fixture_root/git-pr"
+  assert_no_assembly_temp_entries "$fixture_root"
+}
+
+@test "source check ignores CDPATH for a relative builder invocation" {
+  local fixture_root="$BATS_TEST_TMPDIR/relative-builder"
+  local shadow_root="$BATS_TEST_TMPDIR/cdpath-shadow"
+  local root_before="$BATS_TEST_TMPDIR/relative-builder.before"
+
+  prepare_source_fixture "$fixture_root"
+  mkdir -p "$shadow_root/script"
+  cp "$fixture_root/git-pr" "$root_before"
+  cd "$fixture_root"
+
+  run env CDPATH="$shadow_root" /bin/bash script/build-git-pr --check
+  [ "$status" -eq 0 ]
+  cmp "$root_before" "$fixture_root/git-pr"
+  assert_no_assembly_temp_entries "$fixture_root"
+}
+
 @test "source check rejects root and source drift without mutation" {
   local root_fixture="$BATS_TEST_TMPDIR/root-drift"
   local source_fixture="$BATS_TEST_TMPDIR/source-drift"
