@@ -5,6 +5,8 @@
 - Split the canonical `git-pr` development source into manifest-ordered `src/`
   fragments while retaining a committed standalone root executable and
   rejecting source/output drift in CI and release staging.
+- Reject release staging below the canonical `src/` directory without leaving
+  generated-source drift behind.
 
 ## 0.3.6 - 2026-08-18
 

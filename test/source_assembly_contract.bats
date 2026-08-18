@@ -367,3 +367,30 @@ assert_source_shape_rejected() {
   [ "$status" -ne 0 ]
   [ ! -e "$release_dir" ]
 }
+
+@test "release build rejects staging below canonical source without leaving drift" {
+  local fixture_root="$BATS_TEST_TMPDIR/release-under-source"
+  local release_parent="$fixture_root/src/.release-assets"
+  local release_dir="$release_parent/nested"
+  local source_alias="$BATS_TEST_TMPDIR/release-source-alias"
+
+  prepare_source_fixture "$fixture_root"
+
+  run "$fixture_root/script/build-release-assets" "$release_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Release directory must not be inside the canonical source directory."* ]]
+  [ ! -e "$release_parent" ]
+
+  run "$fixture_root/script/build-git-pr" --check
+  [ "$status" -eq 0 ]
+
+  ln -s "$fixture_root/src" "$source_alias"
+  run "$fixture_root/script/build-release-assets" \
+    "$source_alias/.release-assets-via-alias/nested"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Release directory must not be inside the canonical source directory."* ]]
+  [ ! -e "$fixture_root/src/.release-assets-via-alias" ]
+
+  run "$fixture_root/script/build-git-pr" --check
+  [ "$status" -eq 0 ]
+}

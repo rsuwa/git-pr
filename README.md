@@ -277,6 +277,8 @@ Use `script/build-release-assets` to stage the standalone executable and
 generate this file. Before creating or modifying the staging directory, the
 builder runs `script/build-git-pr --check` and refuses to proceed if the
 canonical sources and committed root executable have drifted.
+The staging directory must not be the repository root or reside below the
+canonical `src/` directory.
 The current `v0.3.6` release is published with all three assets.
 The release workflow builds these files in an isolated staging directory and
 verifies their root-file identity, checksums, Bash syntax, version, install
