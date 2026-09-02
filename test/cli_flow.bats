@@ -178,6 +178,13 @@ setup() {
   [[ "$output" == *"ERROR: --language/--diff-exclude require 'git pr copilot'."* ]]
 }
 
+@test "copilot model option is rejected outside copilot mode" {
+  run "$BATS_TEST_DIRNAME/../git-pr" --model auto
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ERROR: --mode/--detail/--model require 'git pr copilot'."* ]]
+}
+
 @test "invalid copilot language config does not break non-copilot existing PR operations" {
   export GIT_PR_FAKE_PR_NUMBER=123
   export GIT_PR_LANGUAGE=fr
@@ -268,8 +275,17 @@ setup() {
 
   [ "$status" -eq 0 ]
   assert_log_contains "git -C $GIT_PR_FAKE_REPO_ROOT diff --quiet origin/main...HEAD -- ."
-  assert_log_contains "copilot -s --no-custom-instructions -p @"
+  assert_log_contains "copilot -s --no-custom-instructions --model auto -p @"
   assert_log_contains "gh pr create --repo example/repo --base main --head feature --title Generated\\ title --body Generated\\ body"
+}
+
+@test "copilot mode passes an explicitly selected model" {
+  create_fake_copilot
+
+  run "$BATS_TEST_DIRNAME/../git-pr" copilot --model claude-haiku-4.5
+
+  [ "$status" -eq 0 ]
+  assert_log_contains "copilot -s --no-custom-instructions --model claude-haiku-4.5 -p @"
 }
 
 @test "copilot update failure preserves existing PR body" {

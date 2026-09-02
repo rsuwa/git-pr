@@ -60,6 +60,8 @@ init_copilot_state() {
   copilot_mode_explicit="false"
   copilot_detail="normal"
   copilot_detail_explicit="false"
+  copilot_model="auto"
+  copilot_model_explicit="false"
   language="${GIT_PR_LANGUAGE:-}"
   language_explicit="false"
   diff_exclude_explicit="false"
@@ -280,6 +282,19 @@ parse_copilot_option() {
       --detail=*)
         copilot_detail="${1#*=}"
         copilot_detail_explicit="true"
+        parse_option_shift=1
+        return 0
+        ;;
+      --model)
+        require_option_value "$1" "$#"
+        copilot_model="$2"
+        copilot_model_explicit="true"
+        parse_option_shift=2
+        return 0
+        ;;
+      --model=*)
+        copilot_model="${1#*=}"
+        copilot_model_explicit="true"
         parse_option_shift=1
         return 0
         ;;

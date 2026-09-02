@@ -59,6 +59,9 @@ validate_common_options() {
   if [ "$copilot_detail_explicit" = "true" ]; then
     require_nonempty_option_value "--detail" "$copilot_detail"
   fi
+  if [ "$copilot_model_explicit" = "true" ]; then
+    require_nonempty_option_value "--model" "$copilot_model"
+  fi
   if [ "$language_explicit" = "true" ]; then
     require_nonempty_option_value "--language" "$language"
   fi
@@ -88,7 +91,7 @@ validate_common_options() {
   fi
 
   if has_copilot_scoped_option && [ "$use_copilot" != "true" ]; then
-    die "--mode/--detail require 'git pr copilot'."
+    die "--mode/--detail/--model require 'git pr copilot'."
   fi
 
   if has_copilot_config_option && [ "$use_copilot" != "true" ]; then

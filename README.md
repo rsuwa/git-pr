@@ -374,6 +374,7 @@ Copilot options:
 | --- | --- |
 | `--mode <create\|update\|auto>` | `create` generates a new title/body for a new PR, `update` preserves an existing body and appends generated content inside a managed marker block, and `auto` chooses based on whether a pull request exists. |
 | `--detail <normal\|verbose>` | Controls the generated body detail level. |
+| `--model <model>` | Copilot CLI model identifier. Defaults to `auto`, which lets Copilot CLI choose an available model. |
 | `--language <en\|ja>` | Output language. Defaults to `GIT_PR_LANGUAGE`, then `git-pr.language`, then `en`. |
 | `--diff-exclude <path>` | Exclude a path from the diff sent to Copilot. Repeatable. |
 

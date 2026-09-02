@@ -45,6 +45,7 @@ setup() {
   [[ "$output" == *"--match-head-commit"* ]]
   [[ "$output" == *"--disable-auto-merge"* ]]
   [[ "$output" == *"--with-copilot"* ]]
+  [[ "$output" == *"--model <model>"* ]]
   [[ "$output" == *"git pr merge [options]"* ]]
   [[ "$output" == *"git pr doctor [--with-copilot]"* ]]
   [[ "$output" == *"Pushes the current branch, then creates or updates a GitHub pull request."* ]]

@@ -381,6 +381,7 @@ Copilot のオプション：
 | --- | --- |
 | `--mode <create\|update\|auto>` | `create` は新しい PR のタイトルと本文を生成します。`update` は既存の本文を保持し、生成した内容を管理対象のマーカーブロック内に追加します。`auto` は、プルリクエストの有無に応じて選択します。 |
 | `--detail <normal\|verbose>` | 生成する本文の詳細度を指定します。 |
+| `--model <model>` | Copilot CLI のモデル識別子。既定値は `auto` で、利用可能なモデルを Copilot CLI が選択します。 |
 | `--language <en\|ja>` | 出力言語。既定では `GIT_PR_LANGUAGE`、`git-pr.language`、`en` の順に使用します。 |
 | `--diff-exclude <path>` | Copilot に送信する差分からパスを除外します。繰り返し指定できます。 |
 
