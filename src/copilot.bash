@@ -408,7 +408,7 @@ EOF
   }
 
   local response=""
-  response=$(cd "$repo_root" && copilot -s --no-custom-instructions -p "@$prompt_file") || {
+  response=$(cd "$repo_root" && copilot -s --no-custom-instructions --model "$copilot_model" -p "@$prompt_file") || {
     log_warn "Copilot CLI failed; falling back. Run 'copilot' once to sign in or check access. See: $COPILOT_CLI_USAGE_URL"
     log_copilot_debug "copilot-cli-failed" "$copilot_log_dir" "$copilot_log_tag" "$prompt_file" "$diff_file" "$response" "$copilot_log_content"
     return 1

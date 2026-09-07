@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Use Copilot CLI automatic model selection by default and allow an explicit
+  model override with `git pr copilot --model <model>`.
+
 ## 0.3.7 - 2026-08-18
 
 - Split the canonical `git-pr` development source into manifest-ordered `src/`

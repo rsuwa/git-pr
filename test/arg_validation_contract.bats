@@ -89,6 +89,7 @@ run_git_pr_update_expect_error() {
     --assignee
     --mode
     --detail
+    --model
     --language
     --diff-exclude
     -m
@@ -105,6 +106,7 @@ run_git_pr_update_expect_error() {
   run_git_pr_expect_error "--base requires a value." create --base
   run_git_pr_expect_error "--mode requires a value." copilot --mode
   run_git_pr_expect_error "--detail requires a value." copilot --detail
+  run_git_pr_expect_error "--model requires a value." copilot --model
   run_git_pr_expect_error "--merge-method requires a value." auto-merge --merge-method
   run_git_pr_expect_error "--match-head-commit requires a value." merge --match-head-commit
 }
@@ -119,6 +121,7 @@ run_git_pr_update_expect_error() {
   run_git_pr_expect_error "--assignee requires a non-empty value." --assignee ""
   run_git_pr_expect_error "--mode requires a non-empty value." copilot --mode ""
   run_git_pr_expect_error "--detail requires a non-empty value." copilot --detail ""
+  run_git_pr_expect_error "--model requires a non-empty value." copilot --model ""
   run_git_pr_expect_error "--language requires a non-empty value." copilot --language ""
   run_git_pr_expect_error "--diff-exclude requires a non-empty value." copilot --diff-exclude ""
   run_git_pr_expect_error "--merge-method requires a non-empty value." --merge-method ""
@@ -336,6 +339,7 @@ run_git_pr_update_expect_error() {
     "--assignee bob"
     "--mode create"
     "--detail verbose"
+    "--model auto"
     "--language ja"
     "--diff-exclude docs/**"
     "--fill"

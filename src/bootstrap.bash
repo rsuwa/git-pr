@@ -37,6 +37,7 @@ Options:
   --assignee <user>        Add assignee(s) (repeatable, comma-separated ok)
   --mode <m>               Copilot mode (copilot only): create|update|auto (default: auto)
   --detail <d>             Copilot detail (copilot only): normal|verbose (default: normal)
+  --model <model>          Copilot model (copilot only; default: auto)
   --language <lang>        Copilot output language: en|ja (default: env/config or en)
   --diff-exclude <path>    Exclude path from Copilot diff (repeatable)
   --fill                   Create: gh fill; existing PR: replace body from commits

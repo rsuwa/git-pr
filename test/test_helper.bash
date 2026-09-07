@@ -684,6 +684,14 @@ validate_fake_copilot_args() {
     case "$arg" in
       -s|--silent|--no-custom-instructions)
         ;;
+      --model)
+        next=$((i + 1))
+        if [ "$next" -gt "$#" ]; then
+          printf 'fake copilot: %s requires a value\n' "$arg" >&2
+          exit 1
+        fi
+        i=$next
+        ;;
       -p|--prompt)
         next=$((i + 1))
         if [ "$next" -gt "$#" ]; then

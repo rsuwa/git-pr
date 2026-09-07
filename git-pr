@@ -37,6 +37,7 @@ Options:
   --assignee <user>        Add assignee(s) (repeatable, comma-separated ok)
   --mode <m>               Copilot mode (copilot only): create|update|auto (default: auto)
   --detail <d>             Copilot detail (copilot only): normal|verbose (default: normal)
+  --model <model>          Copilot model (copilot only; default: auto)
   --language <lang>        Copilot output language: en|ja (default: env/config or en)
   --diff-exclude <path>    Exclude path from Copilot diff (repeatable)
   --fill                   Create: gh fill; existing PR: replace body from commits
@@ -682,7 +683,7 @@ EOF
   }
 
   local response=""
-  response=$(cd "$repo_root" && copilot -s --no-custom-instructions -p "@$prompt_file") || {
+  response=$(cd "$repo_root" && copilot -s --no-custom-instructions --model "$copilot_model" -p "@$prompt_file") || {
     log_warn "Copilot CLI failed; falling back. Run 'copilot' once to sign in or check access. See: $COPILOT_CLI_USAGE_URL"
     log_copilot_debug "copilot-cli-failed" "$copilot_log_dir" "$copilot_log_tag" "$prompt_file" "$diff_file" "$response" "$copilot_log_content"
     return 1
@@ -1016,7 +1017,9 @@ has_manual_content_option() {
 }
 
 has_copilot_scoped_option() {
-  [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ]
+  [ "$copilot_mode_explicit" = "true" ] || \
+    [ "$copilot_detail_explicit" = "true" ] || \
+    [ "$copilot_model_explicit" = "true" ]
 }
 
 has_copilot_config_option() {
@@ -1127,6 +1130,9 @@ validate_common_options() {
   if [ "$copilot_detail_explicit" = "true" ]; then
     require_nonempty_option_value "--detail" "$copilot_detail"
   fi
+  if [ "$copilot_model_explicit" = "true" ]; then
+    require_nonempty_option_value "--model" "$copilot_model"
+  fi
   if [ "$language_explicit" = "true" ]; then
     require_nonempty_option_value "--language" "$language"
   fi
@@ -1156,7 +1162,7 @@ validate_common_options() {
   fi
 
   if has_copilot_scoped_option && [ "$use_copilot" != "true" ]; then
-    die "--mode/--detail require 'git pr copilot'."
+    die "--mode/--detail/--model require 'git pr copilot'."
   fi
 
   if has_copilot_config_option && [ "$use_copilot" != "true" ]; then
@@ -2364,6 +2370,8 @@ init_copilot_state() {
   copilot_mode_explicit="false"
   copilot_detail="normal"
   copilot_detail_explicit="false"
+  copilot_model="auto"
+  copilot_model_explicit="false"
   language="${GIT_PR_LANGUAGE:-}"
   language_explicit="false"
   diff_exclude_explicit="false"
@@ -2584,6 +2592,19 @@ parse_copilot_option() {
       --detail=*)
         copilot_detail="${1#*=}"
         copilot_detail_explicit="true"
+        parse_option_shift=1
+        return 0
+        ;;
+      --model)
+        require_option_value "$1" "$#"
+        copilot_model="$2"
+        copilot_model_explicit="true"
+        parse_option_shift=2
+        return 0
+        ;;
+      --model=*)
+        copilot_model="${1#*=}"
+        copilot_model_explicit="true"
         parse_option_shift=1
         return 0
         ;;

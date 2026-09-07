@@ -262,7 +262,9 @@ has_manual_content_option() {
 }
 
 has_copilot_scoped_option() {
-  [ "$copilot_mode_explicit" = "true" ] || [ "$copilot_detail_explicit" = "true" ]
+  [ "$copilot_mode_explicit" = "true" ] || \
+    [ "$copilot_detail_explicit" = "true" ] || \
+    [ "$copilot_model_explicit" = "true" ]
 }
 
 has_copilot_config_option() {
